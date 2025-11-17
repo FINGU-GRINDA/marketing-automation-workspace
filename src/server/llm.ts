@@ -39,7 +39,18 @@ RawData: ${inputConfig.rawData}`;
 
   // 콘텐츠 유형별 프롬프트
   switch (contentType) {
-    case '포스트':
+    case '포스트': {
+      // 블럭 구조 생성
+      const blockStructure = formatConfig.formatBlocks && formatConfig.formatBlocks.length > 0
+        ? formatConfig.formatBlocks.map((block, index) => `${index + 1}. ${block.title}`).join('\n')
+        : formatConfig.formatStructureDescription;
+
+      const blockDescription = formatConfig.formatBlocks && formatConfig.formatBlocks.length > 0
+        ? `각 블럭의 역할:\n${formatConfig.formatBlocks.map((block, index) =>
+            `  블럭 ${index + 1} (${block.title}): 이 부분에서 ${block.title}에 해당하는 내용을 작성`
+          ).join('\n')}`
+        : '';
+
       return `너는 ${channelConfig.channelType} 채널에 포스트를 작성하는 마케터다.
 
 ${channelInfo}
@@ -49,15 +60,19 @@ ${channelInfo}
 2) FORMAT_EXAMPLE의 문장/사실은 절대 복사하지 말고, 톤과 구성만 참고한다.
 3) 글의 전체 구조는 FORMAT_STRUCTURE를 따른다.
 
-[FORMAT_STRUCTURE]
-${formatConfig.formatStructureDescription}
+[FORMAT_STRUCTURE - 블럭 형식]
+${blockStructure}
+
+${blockDescription}
 
 [FORMAT_EXAMPLE]
 ${formatConfig.formatExampleText}
 
 위 정보를 바탕으로 포스트를 작성해라.
+각 블럭의 순서대로 내용을 구성하고, 자연스럽게 연결하여 완성된 글을 작성해라.
 ${formatConfig.generationPromptTemplate}
 결과를 하나의 완성된 텍스트로 출력해라.`;
+    }
 
     case '일반이미지':
       return `너는 ${channelConfig.channelType} 채널의 이미지를 기획하는 크리에이티브 디렉터다.

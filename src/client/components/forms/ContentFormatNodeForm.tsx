@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
-import type { Node, ContentFormatNodeConfig } from '../../types';
+import type { Node, ContentFormatNodeConfig, FormatBlock } from '../../types';
+import { v4 as uuidv4 } from 'uuid';
 
 interface ContentFormatNodeFormProps {
   node: Node;
@@ -8,15 +9,82 @@ interface ContentFormatNodeFormProps {
 
 function ContentFormatNodeForm({ node, onUpdate }: ContentFormatNodeFormProps) {
   const config = node.data.config as ContentFormatNodeConfig;
-  const [formData, setFormData] = useState(config);
+  const [formData, setFormData] = useState(() => {
+    // formatBlocks가 없으면 빈 배열로 초기화
+    return {
+      ...config,
+      formatBlocks: config.formatBlocks || [],
+    };
+  });
 
-  // node가 변경될 때만 formData 리셋 (config 변경은 handleChange로 처리)
+  // node가 변경될 때만 formData 리셋
   useEffect(() => {
-    setFormData(node.data.config as ContentFormatNodeConfig);
+    const nodeConfig = node.data.config as ContentFormatNodeConfig;
+    setFormData({
+      ...nodeConfig,
+      formatBlocks: nodeConfig.formatBlocks || [],
+    });
   }, [node.id]);
 
   const handleChange = (field: keyof ContentFormatNodeConfig, value: string) => {
     const updated = { ...formData, [field]: value };
+    setFormData(updated);
+    onUpdate(updated);
+  };
+
+  // 블럭 추가
+  const handleAddBlock = () => {
+    const newBlock: FormatBlock = {
+      id: uuidv4(),
+      title: '',
+      description: '',
+    };
+    const updated = {
+      ...formData,
+      formatBlocks: [...formData.formatBlocks, newBlock],
+    };
+    setFormData(updated);
+    onUpdate(updated);
+  };
+
+  // 블럭 삭제
+  const handleDeleteBlock = (blockId: string) => {
+    const updated = {
+      ...formData,
+      formatBlocks: formData.formatBlocks.filter((b) => b.id !== blockId),
+    };
+    setFormData(updated);
+    onUpdate(updated);
+  };
+
+  // 블럭 순서 변경 (위로)
+  const handleMoveBlockUp = (index: number) => {
+    if (index === 0) return;
+    const newBlocks = [...formData.formatBlocks];
+    [newBlocks[index - 1], newBlocks[index]] = [newBlocks[index], newBlocks[index - 1]];
+    const updated = { ...formData, formatBlocks: newBlocks };
+    setFormData(updated);
+    onUpdate(updated);
+  };
+
+  // 블럭 순서 변경 (아래로)
+  const handleMoveBlockDown = (index: number) => {
+    if (index === formData.formatBlocks.length - 1) return;
+    const newBlocks = [...formData.formatBlocks];
+    [newBlocks[index], newBlocks[index + 1]] = [newBlocks[index + 1], newBlocks[index]];
+    const updated = { ...formData, formatBlocks: newBlocks };
+    setFormData(updated);
+    onUpdate(updated);
+  };
+
+  // 블럭 제목 변경
+  const handleBlockTitleChange = (blockId: string, title: string) => {
+    const updated = {
+      ...formData,
+      formatBlocks: formData.formatBlocks.map((b) =>
+        b.id === blockId ? { ...b, title } : b
+      ),
+    };
     setFormData(updated);
     onUpdate(updated);
   };
@@ -60,17 +128,89 @@ function ContentFormatNodeForm({ node, onUpdate }: ContentFormatNodeFormProps) {
       {/* 포스트 선택 시 */}
       {formData.mappedContentType === '포스트' && (
         <>
+          {/* 블럭 형식 포맷 구조 빌더 */}
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">
-              포맷 구조 설명
-            </label>
-            <textarea
-              value={formData.formatStructureDescription}
-              onChange={(e) => handleChange('formatStructureDescription', e.target.value)}
-              rows={4}
-              className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-purple-500"
-              placeholder="예: Hook → 공감 → 인사이트 → CTA"
-            />
+            <div className="flex items-center justify-between mb-2">
+              <label className="block text-sm font-medium text-gray-700">
+                포맷 구조 (블럭 형식)
+              </label>
+              <button
+                type="button"
+                onClick={handleAddBlock}
+                className="px-3 py-1 bg-purple-600 text-white text-xs rounded hover:bg-purple-700 transition-colors"
+              >
+                + 블럭 추가
+              </button>
+            </div>
+
+            {formData.formatBlocks.length === 0 ? (
+              <div className="text-sm text-gray-500 text-center py-4 border border-dashed border-gray-300 rounded-md">
+                블럭을 추가하여 포맷 구조를 만드세요
+                <br />
+                예: 후킹 → 문제상황 공유 → 해결책 제시 → 교훈
+              </div>
+            ) : (
+              <div className="space-y-2">
+                {formData.formatBlocks.map((block, index) => (
+                  <div
+                    key={block.id}
+                    className="flex items-center gap-2 p-3 border border-gray-300 rounded-md bg-gray-50"
+                  >
+                    <div className="flex flex-col gap-1">
+                      <button
+                        type="button"
+                        onClick={() => handleMoveBlockUp(index)}
+                        disabled={index === 0}
+                        className="p-1 text-gray-600 hover:text-gray-900 disabled:text-gray-300 disabled:cursor-not-allowed"
+                        title="위로 이동"
+                      >
+                        ▲
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleMoveBlockDown(index)}
+                        disabled={index === formData.formatBlocks.length - 1}
+                        className="p-1 text-gray-600 hover:text-gray-900 disabled:text-gray-300 disabled:cursor-not-allowed"
+                        title="아래로 이동"
+                      >
+                        ▼
+                      </button>
+                    </div>
+
+                    <div className="flex-1">
+                      <div className="flex items-center gap-2">
+                        <span className="text-xs font-semibold text-purple-600 bg-purple-100 px-2 py-1 rounded">
+                          {index + 1}
+                        </span>
+                        <input
+                          type="text"
+                          value={block.title}
+                          onChange={(e) => handleBlockTitleChange(block.id, e.target.value)}
+                          placeholder="블럭 이름 (예: 후킹, 문제상황 공유, 해결책 제시)"
+                          className="flex-1 px-2 py-1 text-sm border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-purple-500"
+                        />
+                      </div>
+                    </div>
+
+                    <button
+                      type="button"
+                      onClick={() => handleDeleteBlock(block.id)}
+                      className="p-1 text-red-600 hover:text-red-800 transition-colors"
+                      title="삭제"
+                    >
+                      🗑️
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {formData.formatBlocks.length > 0 && (
+              <div className="mt-2 text-xs text-gray-500 bg-gray-100 p-2 rounded">
+                <strong>구조 미리보기:</strong>{' '}
+                {formData.formatBlocks.map((b, i) => b.title || `블럭${i + 1}`).join(' → ')}
+              </div>
+            )}
           </div>
 
           <div>

@@ -62,12 +62,20 @@ export interface ChannelNodeConfig {
   prohibitedTypes: string[]; // 금지할 콘텐츠 유형들
 }
 
+// Format Block (블럭 형식 구조)
+export interface FormatBlock {
+  id: string;
+  title: string;
+  description?: string;
+}
+
 export interface ContentFormatNodeConfig {
   kind: "content_format";
   name: string;
   mappedContentType: string;
+  formatBlocks: FormatBlock[]; // 블럭 형식 구조
   formatExampleText: string;
-  formatStructureDescription: string;
+  formatStructureDescription: string; // 하위 호환성을 위해 유지
   generationPromptTemplate: string;
 }
 

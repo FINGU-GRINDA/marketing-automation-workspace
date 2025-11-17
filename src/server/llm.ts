@@ -715,8 +715,45 @@ function generateMockImage(prompt: string): string {
 }
 
 /**
+ * Gemini 2.5 Flash Image로 실제 이미지 생성
+ */
+async function callGeminiImageAPI(prompt: string): Promise<string> {
+  if (!genAI) {
+    throw new Error('Gemini API key not configured');
+  }
+
+  try {
+    console.log('🖼️  Gemini 2.5 Flash Image 모델로 이미지 생성 중...');
+    const model = genAI.getGenerativeModel({ model: 'gemini-2.5-flash-image' });
+
+    const result = await model.generateContent([prompt]);
+    const response = await result.response;
+
+    // 응답에서 이미지 데이터 추출
+    const parts = response.candidates?.[0]?.content?.parts || [];
+
+    for (const part of parts) {
+      // @ts-ignore - inlineData는 타입 정의에 없을 수 있음
+      if (part.inlineData && part.inlineData.data) {
+        // @ts-ignore
+        const base64Data = part.inlineData.data;
+        // @ts-ignore
+        const mimeType = part.inlineData.mimeType || 'image/png';
+        console.log('✅ 이미지 생성 완료!');
+        return `data:${mimeType};base64,${base64Data}`;
+      }
+    }
+
+    throw new Error('No image data found in response');
+  } catch (error) {
+    console.error('Gemini Image API error:', error);
+    throw error;
+  }
+}
+
+/**
  * 이미지 생성 메인 함수
- * Gemini로 프롬프트를 생성하고, 이미지 생성 API를 호출
+ * Gemini 2.5 Flash Image를 사용하여 실제 이미지 생성
  */
 export async function generateImage(
   inputConfig: InputNodeConfig,
@@ -735,23 +772,21 @@ export async function generateImage(
   }
 
   try {
-    // 1단계: Gemini로 상세한 이미지 생성 프롬프트 작성
+    // 1단계: Gemini Pro로 상세한 이미지 생성 프롬프트 작성
     const promptGenerationPrompt = buildImageGenerationPrompt(
       inputConfig,
       channelConfig,
       formatConfig
     );
 
-    console.log('Gemini로 이미지 프롬프트 생성 중...');
+    console.log('📝 Gemini Pro로 이미지 프롬프트 생성 중...');
     const imagePrompt = await callGeminiAPI(promptGenerationPrompt);
 
     console.log('생성된 이미지 프롬프트:', imagePrompt.substring(0, 100) + '...');
 
-    // 2단계: 실제 이미지 생성
-    // TODO: 실제 구현에서는 Imagen, DALL-E, Stable Diffusion 등의 API 호출
-    // 현재는 개발용 placeholder 이미지 반환
-    console.log('⚠️  실제 이미지 생성 API 미구현 - placeholder 이미지 반환');
-    const imageData = generateMockImage(imagePrompt);
+    // 2단계: Gemini 2.5 Flash Image로 실제 이미지 생성
+    console.log('🎨 Gemini 2.5 Flash Image로 이미지 생성 중...');
+    const imageData = await callGeminiImageAPI(imagePrompt);
 
     return {
       imageData,
@@ -760,6 +795,9 @@ export async function generateImage(
   } catch (error) {
     console.error('이미지 생성 오류:', error);
     const fallbackPrompt = `Error generating image for ${inputConfig.topic}`;
+
+    // 에러 발생 시 fallback으로 mock 이미지 반환
+    console.log('⚠️  에러로 인해 placeholder 이미지 반환');
     return {
       imageData: generateMockImage(fallbackPrompt),
       promptUsed: fallbackPrompt,

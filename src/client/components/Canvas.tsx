@@ -140,12 +140,19 @@ const CanvasInner = forwardRef<CanvasHandle, CanvasProps>(
     [setEdges]
   );
 
-  // workspace 변경 감지 및 동기화
+  // workspace 변경 감지 및 동기화 (외부 변경만 반영)
   const prevWorkspaceIdRef = useRef(workspace.id);
   const prevNodesRef = useRef(JSON.stringify(workspace.nodes));
   const prevEdgesRef = useRef(JSON.stringify(workspace.edges));
+  const isInternalUpdateRef = useRef(false);
 
   useEffect(() => {
+    // 내부 업데이트로 인한 변경은 무시
+    if (isInternalUpdateRef.current) {
+      isInternalUpdateRef.current = false;
+      return;
+    }
+
     const workspaceIdChanged = workspace.id !== prevWorkspaceIdRef.current;
     const nodesJson = JSON.stringify(workspace.nodes);
     const edgesJson = JSON.stringify(workspace.edges);
@@ -175,15 +182,33 @@ const CanvasInner = forwardRef<CanvasHandle, CanvasProps>(
     }
   }, [workspace.id, workspace.nodes, workspace.edges, setNodes, setEdges, handleEdgeDelete]);
 
-  // nodes/edges가 변경될 때 workspace 업데이트
+  // nodes/edges가 변경될 때 workspace 업데이트 (디바운싱 적용)
   useEffect(() => {
     // 실제로 변경된 경우에만 업데이트
     const currentWorkspace = workspaceRef.current;
-    const nodesChanged = JSON.stringify(currentWorkspace.nodes) !== JSON.stringify(nodes);
+    
+    // 노드 변경 감지: position만 변경된 경우는 제외
+    const nodesChanged = nodes.length !== currentWorkspace.nodes.length ||
+      nodes.some((node, idx) => {
+        const oldNode = currentWorkspace.nodes.find(n => n.id === node.id);
+        if (!oldNode) return true;
+        // position만 변경된 경우는 제외 (드래그로 인한 위치 변경)
+        const positionOnly = JSON.stringify({ ...node, position: oldNode.position }) === JSON.stringify(oldNode);
+        return !positionOnly;
+      });
+    
     const edgesChanged = JSON.stringify(currentWorkspace.edges) !== JSON.stringify(edges);
 
     if (nodesChanged || edgesChanged) {
-      setWorkspace({ ...currentWorkspace, nodes, edges });
+      // 디바운싱: 노드 드래그 중 과도한 업데이트 방지
+      const timeoutId = setTimeout(() => {
+        // 내부 업데이트 플래그 설정하여 무한 루프 방지
+        isInternalUpdateRef.current = true;
+        // position 변경도 포함하여 최종 저장
+        setWorkspace({ ...currentWorkspace, nodes, edges });
+      }, 300);
+
+      return () => clearTimeout(timeoutId);
     }
   }, [nodes, edges, setWorkspace]);
 

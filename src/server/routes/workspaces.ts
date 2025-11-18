@@ -11,7 +11,7 @@ const router = express.Router();
  * GET /api/workspaces
  * 모든 워크스페이스 목록 조회
  */
-router.get('/', (req, res) => {
+router.get('/', (_req, res) => {
   const workspaces = db.getAllWorkspaces();
   res.json({ workspaces });
 });
@@ -278,6 +278,7 @@ router.post('/:id/channels/:channelId/suggest-formats', async (req, res) => {
         kind: 'content_format',
         name: suggestion.name,
         mappedContentType: suggestion.mappedContentType,
+        formatBlocks: [],
         formatExampleText: suggestion.formatExampleText,
         formatStructureDescription: suggestion.formatStructureDescription,
         generationPromptTemplate: suggestion.generationPromptTemplate,

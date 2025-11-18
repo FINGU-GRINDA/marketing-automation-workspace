@@ -296,6 +296,58 @@ JSON만 반환하세요.`;
 }
 
 /**
+ * 경로 적합성 평가 프롬프트 빌드 (Input + Channel + Format)
+ */
+function buildRelevancePrompt(
+  inputConfig: InputNodeConfig,
+  channelConfig: ChannelNodeConfig,
+  formatConfig: ContentFormatNodeConfig
+): string {
+  return `당신은 콘텐츠 마케팅 전략가입니다. 주어진 입력 데이터가 특정 채널과 콘텐츠 포맷 조합(경로)에 적합한지 판단해야 합니다.
+
+[입력 데이터]
+주제: ${inputConfig.topic}
+원본 데이터:
+${inputConfig.rawData}
+
+[채널 정보]
+채널 타입: ${channelConfig.channelType}
+채널 이름: ${channelConfig.name}
+페르소나 태그: ${channelConfig.personaTags.join(', ') || '없음'}
+톤 태그: ${channelConfig.toneTags.join(', ') || '없음'}
+콘텐츠 태그: ${channelConfig.highLevelContentTags.join(', ') || '없음'}
+채널 지식/브랜드 설명: ${channelConfig.channelKnowledge || '없음'}
+${channelConfig.prohibitedTypes && channelConfig.prohibitedTypes.length > 0 ? `금지된 콘텐츠 유형: ${channelConfig.prohibitedTypes.join(', ')}` : ''}
+
+[포맷 정보]
+포맷 이름: ${formatConfig.name}
+콘텐츠 유형: ${formatConfig.mappedContentType}
+포맷 구조 설명: ${formatConfig.formatStructureDescription}
+포맷 예시 텍스트: ${formatConfig.formatExampleText}
+
+다음 기준으로 평가하세요:
+1. 입력 데이터의 주제와 내용이 채널과 포맷의 목적/형식에 잘 맞는가?
+2. 이 채널의 페르소나와 톤에 어울리는 주제/내용인가?
+3. 이 포맷 구조로 내용을 구성했을 때 효과적으로 메시지를 전달할 수 있는가?
+4. 채널에서 금지된 콘텐츠 유형에 해당하지 않는가?
+5. 입력 데이터의 양과 질이 이 포맷으로 콘텐츠를 만들기에 충분한가?
+
+**중요**: 다음 경우에는 반드시 false를 반환하세요:
+- 입력 데이터가 채널/포맷의 주제/목적과 완전히 무관한 경우
+- 입력 데이터가 금지된 콘텐츠 유형에 해당하는 경우
+- 입력 데이터가 너무 부족하거나 빈 경우
+
+응답 형식:
+{
+  "suitable": true/false,
+  "confidence": 0-100,
+  "reason": "판단 이유를 한 문장으로"
+}
+
+JSON만 반환하세요.`;
+}
+
+/**
  * 최적 포맷 선택 프롬프트 빌드
  */
 function buildFormatSelectionPrompt(

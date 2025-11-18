@@ -11,5 +11,10 @@ services:
       - .env
     environment:
       - NODE_ENV=production
+      - DATA_DIR=/app/data
+    volumes:
+      - app_data:/app/data
     restart: unless-stopped
 
+volumes:
+  app_data:

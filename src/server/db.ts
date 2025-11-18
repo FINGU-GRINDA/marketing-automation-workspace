@@ -7,8 +7,8 @@ import type { Workspace, Node, Edge, GeneratedContent, InputNodeConfig } from '.
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-// 데이터 저장 경로
-const DATA_DIR = path.join(__dirname, '../../data');
+// 데이터 저장 경로 (환경변수 우선)
+const DATA_DIR = process.env.DATA_DIR || path.join(__dirname, '../../data');
 const DB_FILE = path.join(DATA_DIR, 'db.json');
 
 interface DatabaseState {

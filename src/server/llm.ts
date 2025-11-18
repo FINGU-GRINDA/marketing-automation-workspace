@@ -7,6 +7,7 @@ import type {
 
 // 환경 변수에서 API 키 가져오기 (없으면 mock 모드)
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
+const GAMMA_API_KEY = process.env.GAMMA_API_KEY;
 const USE_MOCK = !GEMINI_API_KEY;
 
 // Gemini 클라이언트 초기화
@@ -869,5 +870,141 @@ export async function generateImage(
       imageData: generateMockImage(fallbackPrompt),
       promptUsed: fallbackPrompt,
     };
+  }
+}
+
+/**
+ * ========================================
+ * Gamma API 관련 함수들
+ * ========================================
+ */
+
+/**
+ * Gamma Generate API 호출
+ */
+async function callGammaGenerateAPI(
+  inputText: string,
+  options: {
+    numCards?: number;
+    tone?: string;
+    audience?: string;
+    detailLevel?: string;
+    imageSources?: string[];
+    additionalInstructions?: string;
+  }
+): Promise<{ url: string; id: string }> {
+  if (!GAMMA_API_KEY) {
+    throw new Error('GAMMA_API_KEY가 설정되지 않았습니다');
+  }
+
+  const BASE_URL = 'https://public-api.gamma.app/v1.0';
+
+  // API 요청 본문 구성
+  const requestBody: any = {
+    inputText,
+    textMode: 'generate',
+    format: 'social',
+    numCards: options.numCards || 1,
+  };
+
+  // textOptions 추가
+  if (options.tone || options.audience || options.detailLevel) {
+    requestBody.textOptions = {};
+    if (options.tone) requestBody.textOptions.tone = options.tone;
+    if (options.audience) requestBody.textOptions.audience = options.audience;
+    if (options.detailLevel) requestBody.textOptions.detailLevel = options.detailLevel;
+  }
+
+  // imageOptions 추가
+  if (options.imageSources && options.imageSources.length > 0) {
+    const sources = options.imageSources.filter(s => s !== 'none');
+    if (sources.length > 0) {
+      requestBody.imageOptions = {
+        sources: sources,
+      };
+    }
+  }
+
+  // 추가 지시사항
+  if (options.additionalInstructions) {
+    requestBody.additionalInstructions = options.additionalInstructions;
+  }
+
+  console.log('🚀 Gamma API 호출 중...', { numCards: requestBody.numCards });
+
+  try {
+    const response = await fetch(`${BASE_URL}/generate`, {
+      method: 'POST',
+      headers: {
+        'X-API-KEY': GAMMA_API_KEY,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(requestBody),
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw new Error(`Gamma API 오류 (${response.status}): ${errorText}`);
+    }
+
+    const data = await response.json();
+    console.log('✅ Gamma 소셜 포스트 생성 완료!');
+
+    // Gamma API 응답에서 URL과 ID 추출
+    // 실제 응답 형식에 따라 조정 필요
+    return {
+      url: data.url || data.webUrl || '',
+      id: data.id || data.gammaId || '',
+    };
+  } catch (error) {
+    console.error('Gamma API 호출 오류:', error);
+    throw error;
+  }
+}
+
+/**
+ * Gamma 소셜 포스트 생성 (메인 함수)
+ */
+export async function generateGammaSocialPost(
+  inputConfig: InputNodeConfig,
+  channelConfig: ChannelNodeConfig,
+  formatConfig: ContentFormatNodeConfig
+): Promise<{ gammaUrl: string; inputText: string }> {
+  console.log('📱 Gamma 소셜 포스트 생성 시작...');
+
+  // inputText 구성 (채널 정보 + 입력 데이터)
+  const inputText = `
+채널: ${channelConfig.channelType}
+페르소나: ${channelConfig.personaTags.join(', ')}
+톤: ${channelConfig.toneTags.join(', ')}
+채널 설명: ${channelConfig.channelKnowledge}
+
+톤앤매너 참고:
+${channelConfig.toneMannerExample}
+
+주제: ${inputConfig.topic}
+내용:
+${inputConfig.rawData}
+`.trim();
+
+  console.log('📝 Input Text 길이:', inputText.length, '자');
+
+  try {
+    const result = await callGammaGenerateAPI(inputText, {
+      numCards: formatConfig.gammaNumCards || 1,
+      tone: formatConfig.gammaTone,
+      audience: formatConfig.gammaAudience,
+      detailLevel: formatConfig.gammaDetailLevel || 'medium',
+      imageSources: formatConfig.gammaImageSources,
+      additionalInstructions: formatConfig.gammaAdditionalInstructions,
+    });
+
+    return {
+      gammaUrl: result.url,
+      inputText,
+    };
+  } catch (error) {
+    console.error('Gamma 소셜 포스트 생성 오류:', error);
+    throw error;
   }
 }

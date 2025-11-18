@@ -9,7 +9,7 @@ import type {
   ContentFormatNodeConfig,
   ExecutedPath,
 } from './types.js';
-import { callLLM, evaluateChannelRelevance, selectBestFormat, generateImage } from './llm.js';
+import { callLLM, evaluateChannelRelevance, selectBestFormat, generateImage, generateGammaSocialPost } from './llm.js';
 
 /**
  * 노드 타입 가드
@@ -312,11 +312,29 @@ export async function executeFlow(
       const formatConfig = formatNode.data.config;
 
       // 콘텐츠 타입에 따라 생성 방식 선택
-      const isImageContent = formatConfig.mappedContentType === '일반이미지';
+      const contentTypeValue = formatConfig.mappedContentType;
+      const isImageContent = contentTypeValue === '일반이미지';
+      const isGammaSocialPost = contentTypeValue === '소셜포스트(Gamma)';
 
       let content: GeneratedContent;
 
-      if (isImageContent) {
+      if (isGammaSocialPost) {
+        // Gamma 소셜 포스트 생성
+        console.log('   📱 Gamma 소셜 포스트 생성 중...');
+        const { gammaUrl, inputText } = await generateGammaSocialPost(inputConfig, channelConfig, formatConfig);
+
+        content = {
+          id: uuidv4(),
+          workspaceId: workspace.id,
+          channelNodeId: channelNode.id,
+          contentFormatNodeId: formatNode.id,
+          contentType: 'gamma',
+          finalText: `Gamma 소셜 포스트 생성 완료\n\nURL: ${gammaUrl}\n\n입력 텍스트 (${inputText.length}자):\n${inputText.substring(0, 200)}...`,
+          gammaUrl: gammaUrl,
+          sourceTopic: inputConfig.topic,
+          createdAt: new Date().toISOString(),
+        };
+      } else if (isImageContent) {
         // 이미지 생성
         console.log('   🖼️  이미지 콘텐츠 생성 중...');
         const { imageData, promptUsed } = await generateImage(inputConfig, channelConfig, formatConfig);

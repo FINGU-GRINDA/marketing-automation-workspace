@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import type { Node, ContentFormatNodeConfig, FormatBlock } from '../../types';
 import { v4 as uuidv4 } from 'uuid';
 
@@ -26,8 +26,21 @@ function ContentFormatNodeForm({ node, onUpdate }: ContentFormatNodeFormProps) {
     });
   }, [node.id]);
 
-  const handleChange = (field: keyof ContentFormatNodeConfig, value: string) => {
+  const handleChange = (field: keyof ContentFormatNodeConfig, value: string | number | string[]) => {
     const updated = { ...formData, [field]: value };
+    setFormData(updated);
+    onUpdate(updated);
+  };
+
+  // Gamma 이미지 소스 토글
+  const handleGammaImageSourceToggle = (source: string) => {
+    const current = formData.gammaImageSources || [];
+    const updated = {
+      ...formData,
+      gammaImageSources: current.includes(source)
+        ? current.filter(s => s !== source)
+        : [...current, source],
+    };
     setFormData(updated);
     onUpdate(updated);
   };
@@ -89,6 +102,44 @@ function ContentFormatNodeForm({ node, onUpdate }: ContentFormatNodeFormProps) {
     onUpdate(updated);
   };
 
+  // Enter 키 핸들러 - 현재 블록 적용 후 다음 블록 추가
+  const handleKeyPress = (e: React.KeyboardEvent<HTMLInputElement>, blockId: string, index: number) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+
+      // 현재 블록이 마지막 블록인 경우에만 새 블록 추가
+      if (index === formData.formatBlocks.length - 1) {
+        const newBlock: FormatBlock = {
+          id: uuidv4(),
+          title: '',
+          description: '',
+        };
+        const updated = {
+          ...formData,
+          formatBlocks: [...formData.formatBlocks, newBlock],
+        };
+        setFormData(updated);
+        onUpdate(updated);
+
+        // 새 블록의 입력창에 포커스 (약간의 지연 후)
+        setTimeout(() => {
+          const inputs = document.querySelectorAll<HTMLInputElement>('.block-title-input');
+          const lastInput = inputs[inputs.length - 1];
+          if (lastInput) {
+            lastInput.focus();
+          }
+        }, 50);
+      } else {
+        // 마지막이 아닌 경우, 다음 블록의 입력창으로 포커스 이동
+        const inputs = document.querySelectorAll<HTMLInputElement>('.block-title-input');
+        const nextInput = inputs[index + 1];
+        if (nextInput) {
+          nextInput.focus();
+        }
+      }
+    }
+  };
+
   return (
     <div className="space-y-4">
       <div className="text-sm font-semibold text-gray-700 pb-2 border-b">
@@ -122,6 +173,7 @@ function ContentFormatNodeForm({ node, onUpdate }: ContentFormatNodeFormProps) {
           <option value="일반이미지">일반이미지</option>
           <option value="텍스트형 이미지">텍스트형 이미지</option>
           <option value="보고서">보고서</option>
+          <option value="소셜포스트(Gamma)">소셜포스트(Gamma)</option>
         </select>
       </div>
 
@@ -147,59 +199,59 @@ function ContentFormatNodeForm({ node, onUpdate }: ContentFormatNodeFormProps) {
               <div className="text-sm text-gray-500 text-center py-4 border border-dashed border-gray-300 rounded-md">
                 블럭을 추가하여 포맷 구조를 만드세요
                 <br />
-                예: 후킹 → 문제상황 공유 → 해결책 제시 → 교훈
+                <span className="text-xs">예: 후킹 → 문제상황 → 해결책 → 교훈</span>
               </div>
             ) : (
               <div className="space-y-2">
                 {formData.formatBlocks.map((block, index) => (
                   <div
                     key={block.id}
-                    className="flex items-center gap-2 p-3 border border-gray-300 rounded-md bg-gray-50"
+                    className="border border-gray-300 rounded-md bg-gray-50 p-2"
                   >
-                    <div className="flex flex-col gap-1">
-                      <button
-                        type="button"
-                        onClick={() => handleMoveBlockUp(index)}
-                        disabled={index === 0}
-                        className="p-1 text-gray-600 hover:text-gray-900 disabled:text-gray-300 disabled:cursor-not-allowed"
-                        title="위로 이동"
-                      >
-                        ▲
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => handleMoveBlockDown(index)}
-                        disabled={index === formData.formatBlocks.length - 1}
-                        className="p-1 text-gray-600 hover:text-gray-900 disabled:text-gray-300 disabled:cursor-not-allowed"
-                        title="아래로 이동"
-                      >
-                        ▼
-                      </button>
-                    </div>
-
-                    <div className="flex-1">
-                      <div className="flex items-center gap-2">
-                        <span className="text-xs font-semibold text-purple-600 bg-purple-100 px-2 py-1 rounded">
-                          {index + 1}
-                        </span>
-                        <input
-                          type="text"
-                          value={block.title}
-                          onChange={(e) => handleBlockTitleChange(block.id, e.target.value)}
-                          placeholder="블럭 이름 (예: 후킹, 문제상황 공유, 해결책 제시)"
-                          className="flex-1 px-2 py-1 text-sm border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-purple-500"
-                        />
+                    <div className="flex items-center gap-2">
+                      <div className="flex gap-1">
+                        <button
+                          type="button"
+                          onClick={() => handleMoveBlockUp(index)}
+                          disabled={index === 0}
+                          className="w-6 h-6 text-xs text-gray-600 hover:text-gray-900 disabled:text-gray-300 disabled:cursor-not-allowed"
+                          title="위로"
+                        >
+                          ▲
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleMoveBlockDown(index)}
+                          disabled={index === formData.formatBlocks.length - 1}
+                          className="w-6 h-6 text-xs text-gray-600 hover:text-gray-900 disabled:text-gray-300 disabled:cursor-not-allowed"
+                          title="아래로"
+                        >
+                          ▼
+                        </button>
                       </div>
-                    </div>
 
-                    <button
-                      type="button"
-                      onClick={() => handleDeleteBlock(block.id)}
-                      className="p-1 text-red-600 hover:text-red-800 transition-colors"
-                      title="삭제"
-                    >
-                      🗑️
-                    </button>
+                      <span className="text-xs font-semibold text-purple-600 bg-purple-100 px-2 py-1 rounded shrink-0">
+                        {index + 1}
+                      </span>
+
+                      <input
+                        type="text"
+                        value={block.title}
+                        onChange={(e) => handleBlockTitleChange(block.id, e.target.value)}
+                        onKeyPress={(e) => handleKeyPress(e, block.id, index)}
+                        placeholder="예: 후킹"
+                        className="block-title-input flex-1 min-w-0 px-2 py-1 text-sm border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-purple-500"
+                      />
+
+                      <button
+                        type="button"
+                        onClick={() => handleDeleteBlock(block.id)}
+                        className="w-6 h-6 text-sm text-red-600 hover:text-red-800 transition-colors shrink-0"
+                        title="삭제"
+                      >
+                        🗑️
+                      </button>
+                    </div>
                   </div>
                 ))}
               </div>
@@ -369,6 +421,111 @@ function ContentFormatNodeForm({ node, onUpdate }: ContentFormatNodeFormProps) {
               className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-purple-500"
               placeholder="예: 전문적인 어조, 데이터 중심, 섹션별 명확한 구분"
             />
+          </div>
+        </>
+      )}
+
+      {/* 소셜포스트(Gamma) 선택 시 */}
+      {formData.mappedContentType === '소셜포스트(Gamma)' && (
+        <>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              카드 수
+            </label>
+            <input
+              type="number"
+              min="1"
+              max="5"
+              value={formData.gammaNumCards || 1}
+              onChange={(e) => handleChange('gammaNumCards', parseInt(e.target.value) || 1)}
+              className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-purple-500"
+              placeholder="1-5"
+            />
+            <p className="text-xs text-gray-500 mt-1">소셜 포스트 카드 개수 (1-5개 권장)</p>
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              어조 (Tone)
+            </label>
+            <input
+              type="text"
+              value={formData.gammaTone || ''}
+              onChange={(e) => handleChange('gammaTone', e.target.value)}
+              className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-purple-500"
+              placeholder="예: 친근한, 전문적인, 유머러스한, 진지한"
+            />
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              대상 청중 (Audience)
+            </label>
+            <input
+              type="text"
+              value={formData.gammaAudience || ''}
+              onChange={(e) => handleChange('gammaAudience', e.target.value)}
+              className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-purple-500"
+              placeholder="예: 20-30대 직장인, 마케터, 스타트업 창업자"
+            />
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              세부 수준 (Detail Level)
+            </label>
+            <select
+              value={formData.gammaDetailLevel || 'medium'}
+              onChange={(e) => handleChange('gammaDetailLevel', e.target.value)}
+              className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-purple-500 bg-white"
+            >
+              <option value="brief">간략 (Brief)</option>
+              <option value="medium">보통 (Medium)</option>
+              <option value="detailed">상세 (Detailed)</option>
+              <option value="extensive">매우 상세 (Extensive)</option>
+            </select>
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">
+              이미지 소스
+            </label>
+            <div className="space-y-2">
+              {['aiGenerated', 'Unsplash', 'Giphy', 'none'].map((source) => (
+                <label key={source} className="flex items-center gap-2 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={(formData.gammaImageSources || []).includes(source)}
+                    onChange={() => handleGammaImageSourceToggle(source)}
+                    className="w-4 h-4 text-purple-600 border-gray-300 rounded focus:ring-purple-500"
+                  />
+                  <span className="text-sm text-gray-700">
+                    {source === 'aiGenerated' && 'AI 생성 이미지'}
+                    {source === 'Unsplash' && 'Unsplash 사진'}
+                    {source === 'Giphy' && 'Giphy GIF'}
+                    {source === 'none' && '이미지 없음'}
+                  </span>
+                </label>
+              ))}
+            </div>
+            <p className="text-xs text-gray-500 mt-1">최소 1개 이상 선택하세요</p>
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              추가 지시사항
+            </label>
+            <textarea
+              value={formData.gammaAdditionalInstructions || ''}
+              onChange={(e) => handleChange('gammaAdditionalInstructions', e.target.value)}
+              rows={4}
+              maxLength={2000}
+              className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-purple-500"
+              placeholder="예: 이모지 사용, CTA 포함, 해시태그 3개 추가"
+            />
+            <p className="text-xs text-gray-500 mt-1">
+              {(formData.gammaAdditionalInstructions || '').length} / 2000자
+            </p>
           </div>
         </>
       )}

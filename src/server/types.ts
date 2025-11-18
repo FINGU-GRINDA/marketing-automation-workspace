@@ -75,6 +75,14 @@ export interface ContentFormatNodeConfig {
   formatExampleText: string;
   formatStructureDescription: string; // 하위 호환성을 위해 유지
   generationPromptTemplate: string;
+
+  // Gamma 소셜 포스트 설정
+  gammaNumCards?: number; // 카드 수 (1-5)
+  gammaTone?: string; // 어조
+  gammaAudience?: string; // 대상 청중
+  gammaDetailLevel?: string; // 세부 수준 (brief, medium, detailed, extensive)
+  gammaImageSources?: string[]; // 이미지 소스 (aiGenerated, Unsplash, Giphy, none)
+  gammaAdditionalInstructions?: string; // 추가 지시사항
 }
 
 // 생성된 콘텐츠
@@ -83,9 +91,10 @@ export interface GeneratedContent {
   workspaceId: string;
   channelNodeId: string;
   contentFormatNodeId: string;
-  contentType: 'text' | 'image';
+  contentType: 'text' | 'image' | 'gamma';
   finalText: string;
   imageData?: string; // base64 encoded image data
+  gammaUrl?: string; // Gamma 소셜 포스트 URL
   sourceTopic: string;
   createdAt: string;
 }

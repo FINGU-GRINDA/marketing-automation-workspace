@@ -108,10 +108,12 @@ router.get('/:id/run', async (req, res) => {
     return res.status(404).json({ error: 'Workspace not found' });
   }
 
-  // SSE 헤더 설정
+  // SSE 헤더 설정 (CORS 포함)
   res.setHeader('Content-Type', 'text/event-stream');
   res.setHeader('Cache-Control', 'no-cache');
   res.setHeader('Connection', 'keep-alive');
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Access-Control-Allow-Headers', 'Cache-Control');
 
   try {
     const executionMode = mode === 'manual' ? 'manual' : 'auto';
@@ -180,10 +182,12 @@ router.post('/:id/run', async (req, res) => {
     return res.status(404).json({ error: 'Workspace not found' });
   }
 
-  // SSE 헤더 설정
+  // SSE 헤더 설정 (CORS 포함)
   res.setHeader('Content-Type', 'text/event-stream');
   res.setHeader('Cache-Control', 'no-cache');
   res.setHeader('Connection', 'keep-alive');
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Access-Control-Allow-Headers', 'Cache-Control');
 
   try {
     console.log(`\n=== Running flow for workspace: ${workspace.name} ===`);

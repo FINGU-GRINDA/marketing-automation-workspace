@@ -120,7 +120,7 @@ function WorkspacePage({
     setSkippedPaths([]);
 
     // EventSource로 SSE 연결 (자동 생성 모드)
-    const eventSource = new EventSource(`http://localhost:3000/api/workspaces/${workspace.id}/run`);
+    const eventSource = new EventSource(`/api/workspaces/${workspace.id}/run`);
 
     eventSource.onmessage = (event) => {
       try {
@@ -182,11 +182,8 @@ function WorkspacePage({
     }
 
     // EventSource로 SSE 연결 (수동 선택 모드)
-    const url = new URL(`http://localhost:3000/api/workspaces/${workspace.id}/run`);
-    url.searchParams.set('mode', 'manual');
-    url.searchParams.set('selectedFormats', selectedFormatIds.join(','));
-
-    const eventSource = new EventSource(url.toString());
+    const url = `/api/workspaces/${workspace.id}/run?mode=manual&selectedFormats=${selectedFormatIds.join(',')}`;
+    const eventSource = new EventSource(url);
 
     eventSource.onmessage = (event) => {
       try {

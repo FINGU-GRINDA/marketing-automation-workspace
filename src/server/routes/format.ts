@@ -2,7 +2,7 @@ import express from 'express';
 import { callOpenAIGPT5 } from '../llm.js';
 import { db } from '../db.js';
 import { v4 as uuidv4 } from 'uuid';
-import type { Node, ContentFormatNodeConfig, Workspace } from '../types.js';
+import type { Node, ContentFormatNodeConfig } from '../types.js';
 
 const router = express.Router();
 
@@ -61,7 +61,7 @@ router.post('/from-reference', async (req, res) => {
       },
       data: {
         label: formatData.formatName,
-        config: createFormatConfig(formatData, targetLanguage)
+        config: createFormatConfig(formatData)
       },
       style: {
         width: 150,
@@ -110,7 +110,7 @@ router.post('/from-reference', async (req, res) => {
 /**
  * AI 생성 데이터로 ContentFormatNodeConfig 생성
  */
-function createFormatConfig(formatData: any, targetLanguage: string): ContentFormatNodeConfig {
+function createFormatConfig(formatData: any): ContentFormatNodeConfig {
   return {
     kind: 'content_format',
     name: formatData.formatName,

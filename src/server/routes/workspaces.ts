@@ -278,9 +278,10 @@ router.post('/:id/channels/:channelId/suggest-formats', async (req, res) => {
       }
 
       // 기타 오류 처리
+      const errorMessage = error instanceof Error ? error.message : String(error);
       return res.status(500).json({
         success: false,
-        error: 'AI 포맷 제안 중 오류가 발생했습니다: ' + error.message
+        error: 'AI 포맷 제안 중 오류가 발생했습니다: ' + errorMessage
       });
     }
 

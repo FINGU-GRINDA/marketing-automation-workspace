@@ -503,68 +503,6 @@ ${JSON.stringify(generationContext, null, 2)}
   }
 }
 
-/**
- * Gemini API 호출 (실제) - 재시도 로직 및 모델 전환 전략 포함
- */
-async function callGeminiAPI(prompt: string, maxRetries: number = 3): Promise<string> {
-  if (!genAI) {
-    throw new Error('Gemini API key not configured');
-  }
-
-  // 사용할 모델 우선순위 (할당량이 높은 순서대로)
-  const modelPriority = [
-    { name: 'gemini-1.5-pro', description: 'Gemini 1.5 Pro (중간 할당량)' },
-    { name: 'gemini-2.5-pro', description: 'Gemini 2.5 Pro (낮은 할당량)' },
-    { name: 'gemini-1.5-pro-latest', description: 'Gemini 1.5 Pro Latest (대체 모델)' }
-  ];
-
-  for (let attempt = 1; attempt <= maxRetries; attempt++) {
-    for (const modelConfig of modelPriority) {
-      try {
-        console.log(`🚀 ${modelConfig.description} API 호출 시도 ${attempt}/${maxRetries}...`);
-
-        const model = genAI.getGenerativeModel({ model: modelConfig.name });
-
-        const result = await model.generateContent(prompt);
-        const response = await result.response;
-        const text = response.text();
-
-        if (!text) {
-          throw new Error('Empty response from Gemini API');
-        }
-
-        console.log(`✅ ${modelConfig.description} API 호출 성공 (시도 ${attempt})`);
-      return text;
-
-      } catch (error: any) {
-        console.error(`❌ ${modelConfig.description} API 호출 실패 (시도 ${attempt}/${maxRetries}):`, error.message);
-
-        // 할당량 초과 오류인 경우 다음 모델 시도
-        if (error.message?.includes('429') || error.message?.includes('quota') || error.message?.includes('Too Many Requests')) {
-          console.log(`🔄 ${modelConfig.description} 할당량 초과. 다음 모델로 전환...`);
-          break; // 현재 모델은 건너뛰고 다음 모델로
-        }
-
-        // 기타 오류는 다음 모델 시도
-        console.log(`🔄 ${modelConfig.description}에서 다른 오류 발생. 다음 모델로 전환...`);
-        break; // 현재 모델은 건너뛰고 다음 모델로
-      }
-    }
-
-    // 모든 모델을 시도했는데 실패했다면
-    if (attempt < maxRetries) {
-      // 지수 백오프: 60초, 120초, 240초
-      const waitTime = 60 * Math.pow(2, attempt - 1);
-      console.log(`⏳ 모든 모델 실패로 ${waitTime}초 후 재시도합니다...`);
-
-      // 대기
-      await new Promise(resolve => setTimeout(resolve, waitTime * 1000));
-      continue;
-    }
-  }
-
-  throw new Error('Gemini API 호출 실패: 모든 모델에서 최대 재시도 횟수 초과');
-}
 
 /**
  * 텍스트 유사성 검증 - 10단어 이상 연속 중복 확인
@@ -1276,13 +1214,6 @@ export async function suggestFormats(
   if (USE_MOCK) {
     console.log('MOCK 모드: 샘플 포맷 반환');
     // Mock 모드에서는 채널 정보를 기반으로 3개의 샘플 포맷 반환
-    const toneText = channelConfig.toneTags.length > 0
-      ? channelConfig.toneTags.join(', ')
-      : '친근하고 전문적인';
-
-    const personaText = channelConfig.personaTags.length > 0
-      ? channelConfig.personaTags.join(', ')
-      : '일반 독자';
 
     // 채널 타입에 따른 포맷 타입 결정
     const getFormatType = () => {
@@ -1754,6 +1685,7 @@ async function callGammaGenerateAPI(
     }
 
     const data = await response.json() as {
+      generationId?: string;
       url?: string;
       webUrl?: string;
       id?: string;
@@ -1883,7 +1815,13 @@ export async function callOpenAIGPT5Generic(
     throw new Error(`OpenAI API 오류 (${response.status}): ${errorText}`);
   }
 
-  const data = await response.json();
+  const data = await response.json() as {
+    choices?: Array<{
+      message?: {
+        content?: string;
+      };
+    }>;
+  };
 
   // API 응답 구조 검증
   if (!data.choices || !data.choices[0] || !data.choices[0].message) {
@@ -2086,7 +2024,13 @@ ${referenceText.length > 300 ?
       throw new Error(`OpenAI API 오류 (${response.status}): ${errorText}`);
     }
 
-    const data = await response.json();
+    const data = await response.json() as {
+      choices?: Array<{
+        message?: {
+          content?: string;
+        };
+      }>;
+    };
 
     // API 응답 구조 검증
     if (!data.choices || !data.choices[0] || !data.choices[0].message) {

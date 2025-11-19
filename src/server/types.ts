@@ -21,6 +21,13 @@ export interface Node {
     label: string;
     config: NodeConfig;
   };
+  style?: {
+    width?: number;
+    height?: number;
+    backgroundColor?: string;
+    border?: string;
+    borderRadius?: string;
+  };
 }
 
 // 엣지
@@ -82,6 +89,17 @@ export interface ContentFormatNodeConfig {
   formatBlocks: FormatBlock[]; // 블럭 형식 구조
   formatExampleText: string;
   formatStructureDescription: string; // 하위 호환성을 위해 유지
+
+  // 전략 분석기 확장 필드
+  overallStrategy?: {
+    funnelStage: string;
+    emotionalArc: string;
+    strategicFocus: string;
+    recommendedLength: {
+      minChars: number;
+      maxChars: number;
+    };
+  };
 
   // Gamma 소셜 포스트 설정
   gammaNumCards?: number; // 카드 수 (1-5)

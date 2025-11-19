@@ -1869,7 +1869,7 @@ export async function callOpenAIGPT5Generic(
       model: "gpt-5.1", // GPT-5.1 모델 사용 (최신 고성능 모델)
       messages: messages,
       temperature: 0.7,
-      max_completion_tokens: 4000, // GPT-5.1은 max_completion_tokens 사용
+      max_completion_tokens: 8000, // GPT-5.1은 max_completion_tokens 사용
     }),
   });
 
@@ -2066,7 +2066,7 @@ ${referenceText.length > 300 ?
         model: "gpt-5.1", // GPT-5.1 모델
         messages: messages,
         temperature: 0.4,
-        max_completion_tokens: 4000, // GPT-5를 위한 적절한 토큰 수
+        max_completion_tokens: 8000, // GPT-5.1을 위한 충분한 토큰 수
       }),
     });
 
@@ -2080,7 +2080,7 @@ ${referenceText.length > 300 ?
           model: "gpt-5.1",
           messages: messages,
           temperature: 0.4,
-          max_completion_tokens: 4000,
+          max_completion_tokens: 8000,
         }, null, 2)
       });
       throw new Error(`OpenAI API 오류 (${response.status}): ${errorText}`);

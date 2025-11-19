@@ -4,6 +4,7 @@ import cors from 'cors';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import workspacesRouter from './routes/workspaces.js';
+import formatRouter from './routes/format.js';
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -24,6 +25,7 @@ app.use((req, _res, next) => {
 
 // API 라우트
 app.use('/api/workspaces', workspacesRouter);
+app.use('/api/format', formatRouter);
 
 // 헬스체크
 app.get('/api/health', (_req, res) => {

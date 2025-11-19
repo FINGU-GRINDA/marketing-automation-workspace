@@ -94,7 +94,7 @@ function RightPanel({ generatedContents, workspace, onDeleteContent, onRegenerat
   };
 
   return (
-    <div className="w-80 bg-white border-l border-gray-200 overflow-y-auto">
+    <div className="h-full bg-white overflow-y-auto">
       <div className="p-4">
         <h2 className="text-lg font-semibold text-gray-900 mb-4">생성 결과</h2>
 

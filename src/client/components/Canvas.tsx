@@ -15,7 +15,7 @@ import ReactFlow, {
 } from 'reactflow';
 import 'reactflow/dist/style.css';
 import { v4 as uuidv4 } from 'uuid';
-import type { Workspace, Node as CustomNode, InputNodeConfig, ChannelNodeConfig, ContentFormatNodeConfig, ExecutedPath } from '../types';
+import type { Workspace, Node as CustomNode, InputNodeConfig, ChannelNodeConfig, ContentFormatNodeConfig, ExecutedPath, ClipboardData, ClipboardNodeData, ClipboardEdgeData } from '../types';
 import InputNode from './nodes/InputNode';
 import ChannelNode from './nodes/ChannelNode';
 import ContentFormatNode from './nodes/ContentFormatNode';
@@ -60,6 +60,8 @@ const CanvasInner = forwardRef<CanvasHandle, CanvasProps>(
     const [nodes, setNodes, onNodesChange] = useNodesState(workspace.nodes);
     const [edges, setEdges, onEdgesChangeBase] = useEdgesState(workspace.edges);
     const [copiedNode, setCopiedNode] = useState<CustomNode | null>(null);
+    const [copiedMultiNodes, setCopiedMultiNodes] = useState<CustomNode[] | null>(null);
+    const [copiedMultiEdges, setCopiedMultiEdges] = useState<any[] | null>(null);
     const reactFlowWrapper = useRef<HTMLDivElement>(null);
     const { setViewport, getViewport } = useReactFlow();
     const workspaceRef = useRef(workspace);
@@ -303,53 +305,172 @@ const CanvasInner = forwardRef<CanvasHandle, CanvasProps>(
       const isMac = navigator.platform.toUpperCase().indexOf('MAC') >= 0;
       const cmdOrCtrl = isMac ? event.metaKey : event.ctrlKey;
 
-      // Cmd/Ctrl + C: 복사
-      if (cmdOrCtrl && event.key === 'c' && selectedNode) {
+      // Cmd/Ctrl + C: 복사 (단일/다중 선택 자동 감지)
+      if (cmdOrCtrl && event.key === 'c') {
         event.preventDefault();
-        try {
-          // Deep copy로 복사
-          const nodeCopy = JSON.parse(JSON.stringify(selectedNode));
-          setCopiedNode(nodeCopy);
-          console.log('✓ 노드 복사됨:', selectedNode.data.label);
-        } catch (error) {
-          console.error('복사 실패:', error);
+
+        const currentlySelectedNodes = nodes.filter(n => n.selected);
+
+        if (currentlySelectedNodes.length > 1) {
+          // 다중 선택 복사
+          try {
+            const selectedNodeIds = new Set(currentlySelectedNodes.map(n => n.id));
+            const selectedEdges = edges.filter(e =>
+              selectedNodeIds.has(e.source) && selectedNodeIds.has(e.target)
+            );
+
+            setCopiedMultiNodes(currentlySelectedNodes);
+            setCopiedMultiEdges(selectedEdges);
+
+            // 단일 선택 클립보드 초기화
+            setCopiedNode(null);
+
+            console.log(`✓ ${currentlySelectedNodes.length}개 노드 다중 선택 복사됨`);
+          } catch (error) {
+            console.error('다중 선택 복사 실패:', error);
+          }
+        } else if (selectedNode) {
+          // 단일 선택 복사 (기존 로직 유지)
+          try {
+            const nodeCopy = JSON.parse(JSON.stringify(selectedNode));
+            setCopiedNode(nodeCopy);
+
+            // 다중 선택 클립보드 초기화
+            setCopiedMultiNodes(null);
+            setCopiedMultiEdges(null);
+
+            console.log('✓ 단일 노드 복사됨:', selectedNode.data.label);
+          } catch (error) {
+            console.error('단일 선택 복사 실패:', error);
+          }
+        } else {
+          console.log('복사할 노드가 선택되지 않았습니다');
         }
       }
 
-      // Cmd/Ctrl + V: 붙여넣기
-      if (cmdOrCtrl && event.key === 'v' && copiedNode) {
+      // Cmd/Ctrl + V: 붙여넣기 (명확한 우선순위: 단일 > 다중)
+      if (cmdOrCtrl && event.key === 'v') {
         event.preventDefault();
-        try {
-          // 완전히 새로운 독립적인 노드 생성
-          const newNode: CustomNode = JSON.parse(JSON.stringify(copiedNode));
-          newNode.id = uuidv4();
-          newNode.position = {
-            x: copiedNode.position.x + 50,
-            y: copiedNode.position.y + 50,
-          };
 
-          setNodes((nds) => [...nds, newNode]);
-          console.log('✓ 노드 붙여넣기 완료:', newNode.data.label);
-        } catch (error) {
-          console.error('붙여넣기 실패:', error);
+        // **중요**: 단일 선택 데이터를 우선적으로 확인
+        if (copiedNode) {
+          // 단일 선택 붙여넣기
+          try {
+            const newNode: CustomNode = JSON.parse(JSON.stringify(copiedNode));
+            newNode.id = uuidv4();
+            newNode.position = {
+              x: copiedNode.position.x + 50,
+              y: copiedNode.position.y + 50,
+            };
+
+            setNodes((nds) => [...nds, newNode]);
+            console.log('✓ 단일 노드 붙여넣기 완료:', newNode.data.label);
+          } catch (error) {
+            console.error('단일 노드 붙여넣기 실패:', error);
+          }
+        } else if (copiedMultiNodes && copiedMultiNodes.length > 0) {
+          // 다중 선택 붙여넣기
+          try {
+            const idMap = new Map<string, string>();
+            const newNodes = copiedMultiNodes.map(node => {
+              const newId = uuidv4();
+              idMap.set(node.id, newId);
+
+              return {
+                ...node,
+                id: newId,
+                position: {
+                  x: node.position.x + 200,
+                  y: node.position.y + 50
+                },
+                selected: false
+              };
+            });
+
+            // Update edge connections
+            const newEdges = copiedMultiEdges?.map(edge => ({
+              ...edge,
+              id: uuidv4(),
+              source: idMap.get(edge.source) || edge.source,
+              target: idMap.get(edge.target) || edge.target
+            })) || [];
+
+            // Add duplicated nodes and edges
+            setNodes(currentNodes => [...currentNodes, ...newNodes]);
+            setEdges(currentEdges => [...currentEdges, ...newEdges]);
+
+            console.log(`✓ ${newNodes.length}개 노드 다중 선택 붙여넣기 완료`);
+          } catch (error) {
+            console.error('다중 선택 붙여넣기 실패:', error);
+          }
+        } else {
+          console.log('붙여넣을 데이터가 없습니다');
         }
       }
 
-      // Cmd/Ctrl + D: 빠른 복제 (복사 + 붙여넣기 한번에)
-      if (cmdOrCtrl && event.key === 'd' && selectedNode) {
+      // Cmd/Ctrl + D: 빠른 복제 (단일/다중 선택 자동 감지)
+      if (cmdOrCtrl && event.key === 'd') {
         event.preventDefault();
-        try {
-          const newNode: CustomNode = JSON.parse(JSON.stringify(selectedNode));
-          newNode.id = uuidv4();
-          newNode.position = {
-            x: selectedNode.position.x + 50,
-            y: selectedNode.position.y + 50,
-          };
 
-          setNodes((nds) => [...nds, newNode]);
-          console.log('✓ 노드 복제 완료:', newNode.data.label);
-        } catch (error) {
-          console.error('복제 실패:', error);
+        const currentlySelectedNodes = nodes.filter(n => n.selected);
+
+        if (currentlySelectedNodes.length > 1) {
+          // 다중 선택 복제
+          try {
+            const selectedNodeIds = new Set(currentlySelectedNodes.map(n => n.id));
+            const selectedEdges = edges.filter(e =>
+              selectedNodeIds.has(e.source) && selectedNodeIds.has(e.target)
+            );
+
+            const idMap = new Map<string, string>();
+            const newNodes = currentlySelectedNodes.map(node => {
+              const newId = uuidv4();
+              idMap.set(node.id, newId);
+
+              return {
+                ...node,
+                id: newId,
+                position: {
+                  x: node.position.x + 200,
+                  y: node.position.y + 50
+                },
+                selected: false
+              };
+            });
+
+            // Update edge connections
+            const newEdges = selectedEdges.map(edge => ({
+              ...edge,
+              id: uuidv4(),
+              source: idMap.get(edge.source) || edge.source,
+              target: idMap.get(edge.target) || edge.target
+            }));
+
+            // Add duplicated nodes and edges
+            setNodes(currentNodes => [...currentNodes, ...newNodes]);
+            setEdges(currentEdges => [...currentEdges, ...newEdges]);
+
+            console.log(`✓ ${newNodes.length}개 노드 다중 선택 복제 완료`);
+          } catch (error) {
+            console.error('다중 선택 복제 실패:', error);
+          }
+        } else if (selectedNode) {
+          // 단일 선택 복제 (기존 로직 유지)
+          try {
+            const newNode: CustomNode = JSON.parse(JSON.stringify(selectedNode));
+            newNode.id = uuidv4();
+            newNode.position = {
+              x: selectedNode.position.x + 50,
+              y: selectedNode.position.y + 50,
+            };
+
+            setNodes((nds) => [...nds, newNode]);
+            console.log('✓ 단일 노드 복제 완료:', newNode.data.label);
+          } catch (error) {
+            console.error('단일 노드 복제 실패:', error);
+          }
+        } else {
+          console.log('복제할 노드가 선택되지 않았습니다');
         }
       }
 
@@ -382,7 +503,7 @@ const CanvasInner = forwardRef<CanvasHandle, CanvasProps>(
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [nodes, selectedNode, copiedNode, setNodes, setEdges, setSelectedNode]);
+  }, [nodes, selectedNode, copiedNode, copiedMultiNodes, copiedMultiEdges, setNodes, setEdges, setSelectedNode]);
 
   // 엣지 연결 (useEffect가 자동 동기화를 처리하므로 단순화)
   const onConnect = useCallback(

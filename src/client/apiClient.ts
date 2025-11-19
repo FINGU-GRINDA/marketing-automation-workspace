@@ -65,4 +65,24 @@ export const api = {
     if (!res.ok) throw new Error('Failed to suggest formats');
     return res.json();
   },
+
+  // 레퍼런스 기반 포맷 생성
+  async generateFormatFromReference(data: {
+    channelId: string;
+    channelType: string;
+    referenceText: string;
+    targetLanguage: string;
+    workspaceId: string; // workspaceId 추가
+  }): Promise<{ success: boolean; data: any; error?: string }> {
+    const res = await fetch(`${API_BASE}/format/from-reference`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data),
+    });
+    if (!res.ok) {
+      const errorData = await res.json().catch(() => ({}));
+      throw new Error(errorData.error || 'Failed to generate format');
+    }
+    return res.json();
+  },
 };

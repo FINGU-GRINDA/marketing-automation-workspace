@@ -4,7 +4,8 @@ import Header from './Header';
 import LeftPanel from './LeftPanel';
 import Canvas, { type CanvasHandle } from './Canvas';
 import RightPanel from './RightPanel';
-import type { Workspace, Node, GeneratedContent, ContentFormatNodeConfig, ExecutedPath } from '../types';
+import FormatReferenceModal from './FormatReferenceModal';
+import type { Workspace, Node, GeneratedContent, ContentFormatNodeConfig, ExecutedPath, ChannelNodeConfig } from '../types';
 import { api } from '../apiClient';
 
 interface WorkspacePageProps {
@@ -38,6 +39,12 @@ function WorkspacePage({
   const [skippedPaths, setSkippedPaths] = useState<ExecutedPath[]>([]);
   const [showRecoveryModal, setShowRecoveryModal] = useState(false);
   const [showRunModeModal, setShowRunModeModal] = useState(false);
+
+  // 포맷 참조 모달 상태
+  const [showFormatReferenceModal, setShowFormatReferenceModal] = useState(false);
+  const [selectedChannelId, setSelectedChannelId] = useState<string | null>(null);
+  const [selectedChannelConfig, setSelectedChannelConfig] = useState<ChannelNodeConfig | null>(null);
+  const [isGeneratingFormat, setIsGeneratingFormat] = useState(false);
 
   // Refs to avoid infinite loops
   const workspaceRef = useRef(workspace);
@@ -123,6 +130,26 @@ function WorkspacePage({
     return () => clearInterval(interval);
   }, []); // Empty dependency - won't re-create interval
 
+  // 포맷 참조 모달 이벤트 리스너
+  useEffect(() => {
+    const handleOpenModal = (event: CustomEvent) => {
+      const { channelId, channelConfig } = event.detail;
+      setSelectedChannelId(channelId);
+      setSelectedChannelConfig(channelConfig);
+      setShowFormatReferenceModal(true);
+    };
+
+    window.addEventListener('openFormatReferenceModal', handleOpenModal as EventListener);
+    return () => window.removeEventListener('openFormatReferenceModal', handleOpenModal as EventListener);
+  }, []);
+
+  // 레퍼런스 기반 포맷 생성 핸들러
+  const handleOpenFormatReference = useCallback((channelId: string, channelConfig: ChannelNodeConfig) => {
+    setSelectedChannelId(channelId);
+    setSelectedChannelConfig(channelConfig);
+    setShowFormatReferenceModal(true);
+  }, []);
+
   // 워크스페이스 저장
   const handleSave = useCallback(async () => {
     try {
@@ -147,7 +174,7 @@ function WorkspacePage({
     setSkippedPaths([]);
 
     // EventSource로 SSE 연결 (자동 생성 모드)
-    const eventSource = new EventSource(`http://localhost:3000/api/workspaces/${workspace.id}/run`);
+    const eventSource = new EventSource(`/api/workspaces/${workspace.id}/run`);
 
     eventSource.onmessage = (event) => {
       try {
@@ -209,11 +236,11 @@ function WorkspacePage({
     }
 
     // EventSource로 SSE 연결 (수동 선택 모드)
-    const url = new URL(`http://localhost:3000/api/workspaces/${workspace.id}/run`);
-    url.searchParams.set('mode', 'manual');
-    url.searchParams.set('selectedFormats', selectedFormatIds.join(','));
-
-    const eventSource = new EventSource(url.toString());
+    const params = new URLSearchParams({
+      mode: 'manual',
+      selectedFormats: selectedFormatIds.join(','),
+    });
+    const eventSource = new EventSource(`/api/workspaces/${workspace.id}/run?${params.toString()}`);
 
     eventSource.onmessage = (event) => {
       try {
@@ -323,6 +350,7 @@ function WorkspacePage({
       }
 
       // 전체 플로우 실행 후 해당 포맷의 결과만 필터링
+      console.log("[UI] 플로우 실행 시도 - 선택된 포맷:", formatId, formatName);
       const response = await api.runFlow(workspace.id);
 
       // 원래 워크스페이스로 복원
@@ -381,6 +409,13 @@ function WorkspacePage({
           generationPromptTemplate: '',
         } as ContentFormatNodeConfig,
       },
+      style: {
+        width: 150,
+        height: 80,
+        backgroundColor: '#f8fafc',
+        border: '2px solid #e2e8f0',
+        borderRadius: '8px'
+      }
     };
 
     // 채널 노드와 포맷 노드를 연결하는 엣지 생성
@@ -408,6 +443,169 @@ function WorkspacePage({
 
     console.log(`✓ 포맷 노드 생성: ${formatName}`);
   }, [workspace, setWorkspace]);
+
+  // 레퍼런스 기반 포맷 생성
+  const handleGenerateFormatFromReference = useCallback(async (data: {
+    channelId: string;
+    channelType: string;
+    referenceText: string;
+    targetLanguage: string;
+  }) => {
+    if (!selectedChannelId || !selectedChannelConfig) return;
+
+    try {
+      setIsGeneratingFormat(true);
+      console.log('🤖 AI 포맷 생성 시작...');
+
+      const response = await api.generateFormatFromReference({
+        ...data,
+        workspaceId: workspace.id // workspaceId 추가
+      });
+
+      if (response.success && response.data) {
+        const responseData = response.data;
+
+        // 서버에서 생성된 노드와 엣지가 있는 경우 워크스페이스를 다시 로드
+        if (responseData.node && responseData.edge) {
+          console.log('✅ 포맷 노드 및 엣지가 서버에서 생성됨');
+
+          try {
+            // 서버에서 업데이트된 워크스페이스를 다시 로드
+            const updatedWorkspace = await api.getWorkspace(workspace.id);
+            if (updatedWorkspace) {
+              setWorkspace(updatedWorkspace.workspace);
+            }
+
+            // 자동 정렬 실행 (노드 렌더링 후 안정적으로 실행)
+            setTimeout(() => {
+              try {
+                if (canvasRef.current) {
+                  canvasRef.current.autoLayout();
+                }
+              } catch (layoutError) {
+                console.error('자동 정렬 중 오류:', layoutError);
+                // 레이아웃 오류가 있어도 사용자 경험은 계속 진행
+              }
+            }, 300);
+
+            // AI 포맷 생성 완료 팝업 표시 및 모달 닫기
+            setTimeout(() => {
+              alert('AI 포맷 생성이 완료되었습니다!');
+              setShowFormatReferenceModal(false);
+            }, 500); // 정렬이 완료된 후 팝업 표시
+          } catch (workspaceError) {
+            console.error('워크스페이스 로드 중 오류:', workspaceError);
+            alert('포맷은 생성되었으나 워크스페이스 새로고침에 실패했습니다. 페이지를 새로고침해주세요.');
+            setShowFormatReferenceModal(false); // 오류 경우에도 모달 닫기
+          }
+        } else {
+          // 기존 방식으로 포맷 데이터 처리 (하위 호환성)
+          const formatData = responseData.formatData || responseData;
+        console.log('✅ AI 포맷 생성 성공:', formatData.formatName);
+
+        // 새 포맷 노드 생성
+        const newFormatNodeId = uuidv4();
+        const newFormatNode: Node = {
+          id: newFormatNodeId,
+          type: 'content_format',
+          position: {
+            x: 650,
+            y: 250 + Math.random() * 100 // 약간의 랜덤 위치
+          },
+          data: {
+            label: formatData.formatName,
+            config: {
+              kind: 'content_format',
+              name: formatData.formatName,
+              mappedContentType: formatData.formatType,
+
+              // 전략 요약 영역
+              overallStrategy: formatData.overallStrategy,
+
+              // 블록 정보 확장
+              formatBlocks: formatData.blocks?.map((block: any) => ({
+                id: uuidv4(),
+                title: block.name,
+                recommendedLength: block.recommendedLength,
+                coreStrategy: block.coreStrategy || '',
+                keyMoves: block.keyMoves || [],
+                dos: block.dos || [],
+                donts: block.donts || []
+              })) || []
+
+            } as ContentFormatNodeConfig,
+          },
+          style: {
+            width: 150,
+            height: 80,
+            backgroundColor: '#f8fafc',
+            border: '2px solid #e2e8f0',
+            borderRadius: '8px'
+          }
+        };
+
+        // 채널 노드와 포맷 노드를 연결하는 엣지 생성
+        const newEdge = {
+          id: uuidv4(),
+          source: selectedChannelId,
+          target: newFormatNodeId,
+          type: 'smoothstep',
+          style: { stroke: '#8b5cf6', strokeWidth: 2 }
+        };
+
+        // workspace에 노드와 엣지 추가
+        const updatedWorkspace = {
+          ...workspace,
+          nodes: [...workspace.nodes, newFormatNode],
+          edges: [...workspace.edges, newEdge],
+        };
+
+        console.log('🔄 워크스페이스 업데이트 시도:', {
+          nodeId: newFormatNode.id,
+          nodeName: formatData.formatName,
+          edgeId: newEdge.id,
+          totalNodes: updatedWorkspace.nodes.length,
+          totalEdges: updatedWorkspace.edges.length
+        });
+
+        try {
+          await api.updateWorkspace(workspace.id, updatedWorkspace);
+          setWorkspace(updatedWorkspace);
+          console.log('✅ 워크스페이스 저장 성공');
+
+          // 자동 정렬 실행 (노드 렌더링 후 안정적으로 실행)
+          setTimeout(() => {
+            try {
+              if (canvasRef.current) {
+                canvasRef.current.autoLayout();
+              }
+            } catch (layoutError) {
+              console.error('자동 정렬 중 오류:', layoutError);
+              // 레이아웃 오류가 있어도 사용자 경험은 계속 진행
+            }
+          }, 300);
+
+          // AI 포맷 생성 완료 팝업 표시 및 모달 닫기
+          setTimeout(() => {
+            alert('AI 포맷 생성이 완료되었습니다!');
+            setShowFormatReferenceModal(false);
+          }, 500); // 정렬이 완료된 후 팝업 표시
+        } catch (saveError) {
+          console.error('❌ 워크스페이스 저장 실패:', saveError);
+          alert('포맷 저장에 실패했습니다. 나중에 다시 시도해주세요.');
+          setShowFormatReferenceModal(false); // 오류 경우에도 모달 닫기
+        }
+        } // 기존 방식 처리의 else 블록 끝
+      } else {
+        alert('포맷 생성에 실패했습니다.');
+      }
+    } catch (error) {
+      console.error('Format generation failed:', error);
+      alert('AI 포맷 생성에 실패했습니다.');
+    } finally {
+      setIsGeneratingFormat(false);
+    }
+  }, [selectedChannelId, selectedChannelConfig, workspace, setWorkspace]);
 
   // AI 포맷 제안
   const handleSuggestFormats = useCallback(async (channelNodeId: string) => {
@@ -545,13 +743,16 @@ function WorkspacePage({
       {/* Main Content */}
       <div className="flex flex-1 overflow-hidden">
         {/* Left Panel */}
-        <LeftPanel
-          selectedNode={selectedNode}
-          workspace={workspace}
-          setWorkspace={setWorkspace}
-          onCreateFormatNode={handleCreateFormatNode}
-          onSuggestFormats={handleSuggestFormats}
-        />
+        <div className="w-64 border-r bg-white overflow-y-auto">
+          <LeftPanel
+            selectedNode={selectedNode}
+            workspace={workspace}
+            setWorkspace={setWorkspace}
+            onCreateFormatNode={handleCreateFormatNode}
+            onSuggestFormats={handleSuggestFormats}
+            onOpenFormatReference={handleOpenFormatReference}
+          />
+        </div>
 
         {/* Canvas */}
         <Canvas
@@ -565,13 +766,27 @@ function WorkspacePage({
         />
 
         {/* Right Panel */}
-        <RightPanel
-          generatedContents={generatedContents}
-          workspace={workspace}
-          onDeleteContent={handleDeleteContent}
-          onRegenerateContent={handleRegenerateContent}
-        />
+        <div className="w-80 border-l bg-white overflow-y-auto">
+          <RightPanel
+            generatedContents={generatedContents}
+            workspace={workspace}
+            onDeleteContent={handleDeleteContent}
+            onRegenerateContent={handleRegenerateContent}
+          />
+        </div>
       </div>
+
+      {/* Format Reference Modal */}
+      {showFormatReferenceModal && selectedChannelConfig && (
+        <FormatReferenceModal
+          isOpen={showFormatReferenceModal}
+          onClose={() => setShowFormatReferenceModal(false)}
+          channelConfig={selectedChannelConfig}
+          channelId={selectedChannelId || ''}
+          onGenerateFormat={handleGenerateFormatFromReference}
+          isGenerating={isGeneratingFormat}
+        />
+      )}
     </div>
   );
 }

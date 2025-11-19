@@ -128,6 +128,7 @@ router.get('/:id/run', async (req, res) => {
     db.clearGeneratedContents(id);
 
     // 플로우 실행 with 콜백
+    console.log("[API] /workspaces/:id/run 라우트 진입, executionMode:", executionMode, "selectedFormatIds:", selectedFormatIds);
     const { results, executedPaths, skippedPaths } = await executeFlow(workspace, {
       mode: executionMode,
       selectedFormatIds,
@@ -257,31 +258,81 @@ router.post('/:id/channels/:channelId/suggest-formats', async (req, res) => {
 
     // 채널 정보만으로 포맷 제안 (입력 노드 불필요)
     console.log('📌 채널 정보만 사용하여 포맷 제안 시작');
-    const suggestions = await suggestFormats(channelConfig);
+
+    let suggestions;
+    try {
+      suggestions = await suggestFormats(channelConfig);
+    } catch (error) {
+      console.error('❌ 포맷 제안 실패:', error);
+
+      // API 할당량 초과 오류 처리
+      if (error instanceof Error && error.message.includes('일일 사용 한도를 초과했습니다')) {
+        return res.status(500).json({
+          success: false,
+          error: 'AI API의 일일 사용 한도를 초과했습니다. 잠시 후 다시 시도해주세요.'
+        });
+      }
+
+      // 기타 오류 처리
+      return res.status(500).json({
+        success: false,
+        error: 'AI 포맷 제안 중 오류가 발생했습니다: ' + error.message
+      });
+    }
 
     if (suggestions.length === 0) {
       console.error('❌ 포맷 제안 실패: 빈 결과');
+      console.log('채널 정보:', {
+        name: channelConfig.name,
+        type: channelConfig.channelType,
+        hasPersonaTags: channelConfig.personaTags.length > 0,
+        hasToneTags: channelConfig.toneTags.length > 0,
+        hasContentTags: channelConfig.highLevelContentTags.length > 0,
+        hasChannelKnowledge: !!channelConfig.channelKnowledge
+      });
+
+      // 더 구체적인 에러 메시지 제공
+      let errorMessage = 'AI가 포맷을 제안하지 못했습니다. ';
+      if (channelConfig.highLevelContentTags.length === 0 && !channelConfig.channelKnowledge) {
+        errorMessage += '콘텐츠 태그나 채널 설명을 추가해주세요. ';
+      } else if (channelConfig.personaTags.length === 0) {
+        errorMessage += '페르소나 태그를 추가해주세요. ';
+      } else if (channelConfig.toneTags.length === 0) {
+        errorMessage += '톤 태그를 추가해주세요. ';
+      } else {
+        errorMessage += '채널 정보를 더 자세히 입력해주세요. ';
+      }
+
       return res.status(500).json({
         success: false,
-        error: 'AI가 포맷을 제안하지 못했습니다. 채널 정보를 더 자세히 입력해주세요.'
+        error: errorMessage
       });
     }
 
     console.log(`✓ ${suggestions.length}개 포맷 제안 완료`);
     suggestions.forEach((s, i) => {
-      console.log(`  ${i + 1}. ${s.name} (${s.mappedContentType})`);
+      console.log(`  ${i + 1}. ${s.formatName} (${s.formatType})`);
     });
 
     // 포맷 노드 생성
     const newFormatNodes = suggestions.map((suggestion, index) => {
       const formatConfig: ContentFormatNodeConfig = {
         kind: 'content_format',
-        name: suggestion.name,
-        mappedContentType: suggestion.mappedContentType,
-        formatBlocks: [],
-        formatExampleText: suggestion.formatExampleText,
-        formatStructureDescription: suggestion.formatStructureDescription,
-        generationPromptTemplate: suggestion.generationPromptTemplate,
+        name: suggestion.formatName,
+        mappedContentType: suggestion.formatType,
+        formatBlocks: suggestion.blocks.map((block) => ({
+          id: uuidv4(),
+          title: block.name,
+          description: '',
+          recommendedLength: block.recommendedLength,
+          coreStrategy: block.coreStrategy,
+          keyMoves: block.keyMoves,
+          dos: block.dos,
+          donts: block.donts,
+        })),
+        formatExampleText: '',
+        formatStructureDescription: '',
+        overallStrategy: suggestion.overallStrategy,
       };
 
       return {
@@ -292,7 +343,7 @@ router.post('/:id/channels/:channelId/suggest-formats', async (req, res) => {
           y: channelNode.position.y + (index - 1) * 120,
         },
         data: {
-          label: suggestion.name,
+          label: suggestion.formatName,
           config: formatConfig,
         },
       };

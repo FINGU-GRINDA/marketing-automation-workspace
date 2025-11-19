@@ -316,6 +316,9 @@ export async function executeFlow(
       const isImageContent = contentTypeValue === '일반이미지';
       const isGammaSocialPost = contentTypeValue === '소셜포스트(Gamma)';
 
+      console.log(`[FLOW] 포맷 체크 - ID: ${formatNode.id}, 이름: ${formatNode.data.label}`);
+      console.log(`[FLOW] contentTypeValue: "${contentTypeValue}", isGammaSocialPost: ${isGammaSocialPost}`);
+
       let content: GeneratedContent;
 
       if (isGammaSocialPost) {

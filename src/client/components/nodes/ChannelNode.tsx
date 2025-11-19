@@ -37,6 +37,14 @@ function ChannelNode({ data, id }: any) {
     }
   };
 
+  const handleAddFormat = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    // 포맷 추가 이벤트 발생 - 부모 컴포넌트에서 처리
+    window.dispatchEvent(new CustomEvent('openFormatReferenceModal', {
+      detail: { channelId: id, channelConfig: data.config }
+    }));
+  };
+
   return (
     <div className="relative group">
       {/* Top + button */}
@@ -48,13 +56,24 @@ function ChannelNode({ data, id }: any) {
       </button>
 
       {/* Node content */}
-      <div className={`px-4 py-3 ${color.bg} border-2 ${color.border} rounded-lg min-w-[150px]`}>
+      <div className={`px-2 py-1 ${color.bg} border-2 ${color.border} rounded-lg w-[150px] h-[80px] flex items-center relative`}>
         <Handle type="target" position={Position.Left} />
-        <div className={`font-semibold ${color.text}`}>{data.label}</div>
-        <div className={`text-xs ${color.textLight} mt-1`}>
-          {channelType}
+        <div className="flex-1">
+          <div className={`font-semibold ${color.text} text-xs leading-tight truncate`}>{data.label}</div>
+          <div className={`text-xs ${color.textLight} truncate`}>
+            {channelType}
+          </div>
         </div>
         <Handle type="source" position={Position.Right} />
+
+        {/* Format Add Button */}
+        <button
+          onClick={handleAddFormat}
+          className={`absolute -right-2 top-1/2 transform -translate-y-1/2 w-5 h-5 ${color.button} text-white rounded-full opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center text-xs font-bold shadow-md z-10`}
+          title="포맷 추가"
+        >
+          F
+        </button>
       </div>
 
       {/* Bottom + button */}

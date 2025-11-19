@@ -9,9 +9,10 @@ interface LeftPanelProps {
   setWorkspace: (workspace: Workspace) => void;
   onCreateFormatNode?: (channelNodeId: string, formatName: string) => void;
   onSuggestFormats?: (channelNodeId: string) => void;
+  onOpenFormatReference?: (channelId: string, channelConfig: ChannelNodeConfig) => void;
 }
 
-function LeftPanel({ selectedNode, workspace, setWorkspace, onCreateFormatNode, onSuggestFormats }: LeftPanelProps) {
+function LeftPanel({ selectedNode, workspace, setWorkspace, onCreateFormatNode, onSuggestFormats, onOpenFormatReference }: LeftPanelProps) {
   // 노드 설정 업데이트
   const updateNodeConfig = (nodeId: string, newConfig: any) => {
     const updatedNodes = workspace.nodes.map((node) => {
@@ -47,7 +48,7 @@ function LeftPanel({ selectedNode, workspace, setWorkspace, onCreateFormatNode, 
   };
 
   return (
-    <div className="w-64 bg-white border-r border-gray-200 overflow-y-auto">
+    <div className="h-full bg-white overflow-y-auto">
       <div className="p-4">
         <h2 className="text-lg font-semibold text-gray-900 mb-4">노드 설정</h2>
 
@@ -72,6 +73,7 @@ function LeftPanel({ selectedNode, workspace, setWorkspace, onCreateFormatNode, 
                 onUpdate={(config) => updateNodeConfig(selectedNode.id, config)}
                 onCreateFormatNode={onCreateFormatNode}
                 onSuggestFormats={onSuggestFormats}
+                onOpenFormatReference={onOpenFormatReference}
                 workspace={workspace}
                 setWorkspace={setWorkspace}
               />

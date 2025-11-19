@@ -6,11 +6,12 @@ interface ChannelNodeFormProps {
   onUpdate: (config: ChannelNodeConfig) => void;
   onCreateFormatNode?: (channelNodeId: string, formatName: string) => void;
   onSuggestFormats?: (channelNodeId: string) => void;
+  onOpenFormatReference?: (channelId: string, channelConfig: ChannelNodeConfig) => void;
   workspace?: Workspace;
   setWorkspace?: (workspace: Workspace) => void;
 }
 
-function ChannelNodeForm({ node, onUpdate, onCreateFormatNode, onSuggestFormats, workspace, setWorkspace }: ChannelNodeFormProps) {
+function ChannelNodeForm({ node, onUpdate, onCreateFormatNode, onSuggestFormats, onOpenFormatReference, workspace, setWorkspace }: ChannelNodeFormProps) {
   const config = node.data.config as ChannelNodeConfig;
   const [formData, setFormData] = useState(config);
 
@@ -244,6 +245,7 @@ function ChannelNodeForm({ node, onUpdate, onCreateFormatNode, onSuggestFormats,
           <option value="youtube">YouTube</option>
           <option value="slack">Slack</option>
           <option value="facebook">Facebook</option>
+          <option value="cold-email">콜드메일</option>
         </select>
       </div>
 
@@ -413,19 +415,6 @@ function ChannelNodeForm({ node, onUpdate, onCreateFormatNode, onSuggestFormats,
         />
       </div>
 
-      <div>
-        <label className="block text-sm font-medium text-gray-700 mb-1">
-          콘텐츠 톤앤매너 예시
-        </label>
-        <textarea
-          value={formData.toneMannerExample}
-          onChange={(e) => handleChange('toneMannerExample', e.target.value)}
-          rows={4}
-          className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-          placeholder="이 채널의 말투나 어감을 이해할 수 있는 예시 텍스트를 입력하세요..."
-        />
-      </div>
-
       {/* AI 포맷 제안 버튼 */}
       {onSuggestFormats && (
         <div className="pt-2 border-t border-gray-200">
@@ -438,6 +427,22 @@ function ChannelNodeForm({ node, onUpdate, onCreateFormatNode, onSuggestFormats,
           </button>
           <p className="text-xs text-gray-500 mt-2 text-center">
             채널 정보를 분석하여 2-3개의 적합한 포맷을 자동 생성합니다
+          </p>
+        </div>
+      )}
+
+      {/* 레퍼런스 기반 포맷 생성 버튼 */}
+      {onOpenFormatReference && (
+        <div className="pt-2">
+          <button
+            type="button"
+            onClick={() => onOpenFormatReference(node.id, formData)}
+            className="w-full px-4 py-2 bg-gradient-to-r from-green-500 to-teal-600 text-white rounded-md text-sm font-medium hover:from-green-600 hover:to-teal-700 transition-all shadow-sm hover:shadow-md"
+          >
+            📝 레퍼런스로 포맷 생성
+          </button>
+          <p className="text-xs text-gray-500 mt-2 text-center">
+            좋아하는 글을 분석하여 맞춤형 포맷을 생성합니다
           </p>
         </div>
       )}

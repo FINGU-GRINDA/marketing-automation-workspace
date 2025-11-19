@@ -2,7 +2,7 @@ import { useContext } from 'react';
 import { Handle, Position } from 'reactflow';
 import { NodeActionsContext } from '../Canvas';
 
-function ContentFormatNode({ data, id, selected }: any) {
+function ContentFormatNode({ data, id, selected, style }: any) {
   const nodeActions = useContext(NodeActionsContext);
   const isSelected = data.selected || false;
 
@@ -21,7 +21,7 @@ function ContentFormatNode({ data, id, selected }: any) {
   };
 
   return (
-    <div className="relative group">
+    <div className="relative group" style={style}>
       {/* Top + button */}
       <button
         onClick={(e) => handleDuplicate('top', e)}
@@ -31,20 +31,21 @@ function ContentFormatNode({ data, id, selected }: any) {
       </button>
 
       {/* Node content */}
-      <div className={`px-4 py-3 bg-purple-100 border-2 rounded-lg min-w-[150px] ${isSelected ? 'border-purple-700 bg-purple-200' : 'border-purple-500'}`}>
+      <div className={`px-2 py-1 bg-purple-100 border-2 rounded-lg w-[150px] h-[80px] overflow-hidden flex items-center ${isSelected ? 'border-purple-700 bg-purple-200' : 'border-purple-500'}`}>
         <Handle type="target" position={Position.Left} />
-        <div className="flex items-start gap-2">
+
+        <div className="flex items-center gap-2 w-full">
           <input
             type="checkbox"
             checked={isSelected}
             onChange={handleCheckboxChange}
-            className="mt-1 w-4 h-4 text-purple-600 rounded focus:ring-purple-500"
+            className="w-3 h-3 text-purple-600 rounded focus:ring-purple-500 flex-shrink-0"
             onClick={(e) => e.stopPropagation()}
           />
-          <div className="flex-1">
-            <div className="font-semibold text-purple-900">{data.label}</div>
-            <div className="text-xs text-purple-700 mt-1">
-              {data.config.mappedContentType || '콘텐츠 유형 설정 필요'}
+          <div className="flex-1 min-w-0">
+            <div className="font-semibold text-purple-900 text-xs leading-tight truncate">{data.label}</div>
+            <div className="text-xs text-purple-600 truncate">
+              {data.config.mappedContentType || '콘텐츠 유형'}
             </div>
           </div>
         </div>

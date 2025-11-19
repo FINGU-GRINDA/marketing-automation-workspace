@@ -44,6 +44,8 @@ export interface InputNodeConfig {
   title: string;
   topic: string;
   rawData: string;
+  targetLanguage?: string; // 타겟 언어 (기본값: 'ko')
+  message?: string; // 추가 메시지
 }
 
 // Channel Node 설정
@@ -64,6 +66,12 @@ export interface FormatBlock {
   id: string;
   title: string;
   description?: string;
+  recommendedLength?: string;
+  coreStrategy?: string;
+  keyMoves?: string[];
+  dos?: string[];
+  donts?: string[];
+  [key: string]: any; // 계속해서 정보를 기입할 수 있도록 동적 속성 허용
 }
 
 // Content Format Node 설정
@@ -74,7 +82,6 @@ export interface ContentFormatNodeConfig {
   formatBlocks: FormatBlock[]; // 블럭 형식 구조
   formatExampleText: string;
   formatStructureDescription: string; // 하위 호환성을 위해 유지
-  generationPromptTemplate: string;
 
   // Gamma 소셜 포스트 설정
   gammaNumCards?: number; // 카드 수 (1-5)

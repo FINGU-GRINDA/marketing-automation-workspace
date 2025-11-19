@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
-import type { Node, ContentFormatNodeConfig, FormatBlock } from '../../types';
+import type { Node, ContentFormatNodeConfig, FormatBlock, ExtendedFormatBlock } from '../../types';
 import { v4 as uuidv4 } from 'uuid';
 
 interface ContentFormatNodeFormProps {
@@ -26,7 +26,7 @@ function ContentFormatNodeForm({ node, onUpdate }: ContentFormatNodeFormProps) {
     });
   }, [node.id]);
 
-  const handleChange = (field: keyof ContentFormatNodeConfig, value: string | number | string[]) => {
+  const handleChange = (field: keyof ContentFormatNodeConfig, value: string | number | string[] | any) => {
     const updated = { ...formData, [field]: value };
     setFormData(updated);
     onUpdate(updated);
@@ -51,6 +51,12 @@ function ContentFormatNodeForm({ node, onUpdate }: ContentFormatNodeFormProps) {
       id: uuidv4(),
       title: '',
       description: '',
+      // 전략적 확장 필드 추가
+      recommendedLength: '',
+      coreStrategy: '',
+      keyMoves: [''],
+      dos: [''],
+      donts: [''],
     };
     const updated = {
       ...formData,
@@ -113,6 +119,12 @@ function ContentFormatNodeForm({ node, onUpdate }: ContentFormatNodeFormProps) {
           id: uuidv4(),
           title: '',
           description: '',
+          // 전략적 확장 필드 추가
+          recommendedLength: '',
+          coreStrategy: '',
+          keyMoves: [''],
+          dos: [''],
+          donts: [''],
         };
         const updated = {
           ...formData,
@@ -180,11 +192,174 @@ function ContentFormatNodeForm({ node, onUpdate }: ContentFormatNodeFormProps) {
       {/* 포스트 선택 시 */}
       {formData.mappedContentType === '포스트' && (
         <>
-          {/* 블럭 형식 포맷 구조 빌더 */}
+          {/* 전략 요약 섹션 */}
+          {formData.overallStrategy && (
+            <div className="bg-gradient-to-r from-purple-50 to-indigo-50 border border-purple-200 rounded-lg p-4">
+              <div className="flex items-center justify-between mb-3">
+                <h4 className="text-sm font-semibold text-purple-800 flex items-center gap-2">
+                  🎯 전략 요약
+                </h4>
+                <button
+                  type="button"
+                  onClick={() => {
+                    const updated = {
+                      ...formData,
+                      overallStrategy: undefined
+                    };
+                    setFormData(updated);
+                    onUpdate(updated);
+                  }}
+                  className="text-xs text-red-600 hover:text-red-800"
+                >
+                  전략 요약 삭제
+                </button>
+              </div>
+              <div className="grid grid-cols-1 gap-3">
+                <div>
+                  <label className="block text-xs font-medium text-gray-600 mb-1">퍼널 단계:</label>
+                  <input
+                    type="text"
+                    value={formData.overallStrategy?.funnelStage || ''}
+                    onChange={(e) => {
+                      const updated = {
+                        ...formData,
+                        overallStrategy: {
+                          ...formData.overallStrategy,
+                          funnelStage: e.target.value
+                        }
+                      };
+                      setFormData(updated);
+                      onUpdate(updated);
+                    }}
+                    className="w-full px-2 py-1 text-xs border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-purple-500 bg-white"
+                    placeholder="예: 인지/관심/고려/전환"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-gray-600 mb-1">감정적 흐름:</label>
+                  <input
+                    type="text"
+                    value={formData.overallStrategy?.emotionalArc || ''}
+                    onChange={(e) => {
+                      const updated = {
+                        ...formData,
+                        overallStrategy: {
+                          ...formData.overallStrategy,
+                          emotionalArc: e.target.value
+                        }
+                      };
+                      setFormData(updated);
+                      onUpdate(updated);
+                    }}
+                    className="w-full px-2 py-1 text-xs border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-purple-500 bg-white"
+                    placeholder="예: 호기심→공감→신뢰→행동 의지"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-gray-600 mb-1">전략적 집점:</label>
+                  <input
+                    type="text"
+                    value={formData.overallStrategy?.strategicFocus || ''}
+                    onChange={(e) => {
+                      const updated = {
+                        ...formData,
+                        overallStrategy: {
+                          ...formData.overallStrategy,
+                          strategicFocus: e.target.value
+                        }
+                      };
+                      setFormData(updated);
+                      onUpdate(updated);
+                    }}
+                    className="w-full px-2 py-1 text-xs border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-purple-500 bg-white"
+                    placeholder="예: 사회적 증거를 통한 신뢰 구축"
+                  />
+                </div>
+                <div className="grid grid-cols-2 gap-2">
+                  <div>
+                    <label className="block text-xs font-medium text-gray-600 mb-1">최소 길이:</label>
+                    <input
+                      type="number"
+                      value={formData.overallStrategy?.recommendedLength?.minChars || 0}
+                      onChange={(e) => {
+                        const updated = {
+                          ...formData,
+                          overallStrategy: {
+                            ...formData.overallStrategy,
+                            recommendedLength: {
+                              ...formData.overallStrategy?.recommendedLength,
+                              minChars: parseInt(e.target.value) || 0,
+                              maxChars: formData.overallStrategy?.recommendedLength?.maxChars || 0
+                            }
+                          }
+                        };
+                        setFormData(updated);
+                        onUpdate(updated);
+                      }}
+                      className="w-full px-2 py-1 text-xs border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-purple-500 bg-white"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-gray-600 mb-1">최대 길이:</label>
+                    <input
+                      type="number"
+                      value={formData.overallStrategy?.recommendedLength?.maxChars || 0}
+                      onChange={(e) => {
+                        const updated = {
+                          ...formData,
+                          overallStrategy: {
+                            ...formData.overallStrategy,
+                            recommendedLength: {
+                              ...formData.overallStrategy?.recommendedLength,
+                              minChars: formData.overallStrategy?.recommendedLength?.minChars || 0,
+                              maxChars: parseInt(e.target.value) || 0
+                            }
+                          }
+                        };
+                        setFormData(updated);
+                        onUpdate(updated);
+                      }}
+                      className="w-full px-2 py-1 text-xs border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-purple-500 bg-white"
+                    />
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* 전략 요약이 없는 경우 추가 버튼 */}
+          {!formData.overallStrategy && (
+            <div className="text-center">
+              <button
+                type="button"
+                onClick={() => {
+                  const updated = {
+                    ...formData,
+                    overallStrategy: {
+                      funnelStage: '',
+                      emotionalArc: '',
+                      strategicFocus: '',
+                      recommendedLength: {
+                        minChars: 0,
+                        maxChars: 0
+                      }
+                    }
+                  };
+                  setFormData(updated);
+                  onUpdate(updated);
+                }}
+                className="px-4 py-2 bg-purple-100 text-purple-700 text-sm rounded hover:bg-purple-200 transition-colors"
+              >
+                + 전략 요약 추가
+              </button>
+            </div>
+          )}
+
+          {/* 전략적 블럭 구조 섹션 */}
           <div>
             <div className="flex items-center justify-between mb-2">
               <label className="block text-sm font-medium text-gray-700">
-                포맷 구조 (블럭 형식)
+                전략적 블럭 구조
               </label>
               <button
                 type="button"
@@ -197,99 +372,387 @@ function ContentFormatNodeForm({ node, onUpdate }: ContentFormatNodeFormProps) {
 
             {formData.formatBlocks.length === 0 ? (
               <div className="text-sm text-gray-500 text-center py-4 border border-dashed border-gray-300 rounded-md">
-                블럭을 추가하여 포맷 구조를 만드세요
+                전략적 블럭을 추가하여 콘텐츠 구조를 만드세요
                 <br />
-                <span className="text-xs">예: 후킹 → 문제상황 → 해결책 → 교훈</span>
+                <span className="text-xs">AI가 분석한 전략적 구조가 자동으로 채워집니다</span>
               </div>
             ) : (
-              <div className="space-y-2">
-                {formData.formatBlocks.map((block, index) => (
-                  <div
-                    key={block.id}
-                    className="border border-gray-300 rounded-md bg-gray-50 p-2"
-                  >
-                    <div className="flex items-center gap-2">
-                      <div className="flex gap-1">
-                        <button
-                          type="button"
-                          onClick={() => handleMoveBlockUp(index)}
-                          disabled={index === 0}
-                          className="w-6 h-6 text-xs text-gray-600 hover:text-gray-900 disabled:text-gray-300 disabled:cursor-not-allowed"
-                          title="위로"
-                        >
-                          ▲
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => handleMoveBlockDown(index)}
-                          disabled={index === formData.formatBlocks.length - 1}
-                          className="w-6 h-6 text-xs text-gray-600 hover:text-gray-900 disabled:text-gray-300 disabled:cursor-not-allowed"
-                          title="아래로"
-                        >
-                          ▼
-                        </button>
+              <div className="space-y-3">
+                {formData.formatBlocks.map((block, index) => {
+                  const extendedBlock = block as ExtendedFormatBlock;
+                  return (
+                    <div
+                      key={block.id}
+                      className="border border-purple-200 rounded-md bg-gradient-to-br from-purple-50 to-white p-4"
+                    >
+                      <div className="flex items-start justify-between mb-3">
+                        <div className="flex items-center gap-2">
+                          <div className="flex gap-1">
+                            <button
+                              type="button"
+                              onClick={() => handleMoveBlockUp(index)}
+                              disabled={index === 0}
+                              className="w-6 h-6 text-xs text-gray-600 hover:text-gray-900 disabled:text-gray-300 disabled:cursor-not-allowed"
+                              title="위로"
+                            >
+                              ▲
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handleMoveBlockDown(index)}
+                              disabled={index === formData.formatBlocks.length - 1}
+                              className="w-6 h-6 text-xs text-gray-600 hover:text-gray-900 disabled:text-gray-300 disabled:cursor-not-allowed"
+                              title="아래로"
+                            >
+                              ▼
+                            </button>
+                          </div>
+
+                          <span className="text-xs font-semibold text-purple-600 bg-purple-100 px-2 py-1 rounded shrink-0">
+                            {index + 1}
+                          </span>
+
+                          <input
+                            type="text"
+                            value={block.title}
+                            onChange={(e) => handleBlockTitleChange(block.id, e.target.value)}
+                            onKeyPress={(e) => handleKeyPress(e, block.id, index)}
+                            placeholder="블럭 이름"
+                            className="block-title-input flex-1 min-w-[150px] px-2 py-1 text-sm border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-purple-500 font-medium"
+                          />
+
+                          <button
+                            type="button"
+                            onClick={() => handleDeleteBlock(block.id)}
+                            className="w-6 h-6 text-sm text-red-600 hover:text-red-800 transition-colors shrink-0"
+                            title="삭제"
+                          >
+                            🗑️
+                          </button>
+                        </div>
                       </div>
 
-                      <span className="text-xs font-semibold text-purple-600 bg-purple-100 px-2 py-1 rounded shrink-0">
-                        {index + 1}
-                      </span>
+                      {/* 확장된 전략 정보 - 수정 가능한 필드 */}
+                      <div className="space-y-3 text-xs">
+                        <div>
+                          <label className="block font-medium text-gray-600 mb-1">권장 길이:</label>
+                          <input
+                            type="text"
+                            value={extendedBlock.recommendedLength || ''}
+                            onChange={(e) => {
+                              const updated = {
+                                ...formData,
+                                formatBlocks: formData.formatBlocks.map((b) =>
+                                  b.id === block.id
+                                    ? { ...b, recommendedLength: e.target.value }
+                                    : b
+                                )
+                              };
+                              setFormData(updated);
+                              onUpdate(updated);
+                            }}
+                            className="w-full px-2 py-1 text-xs border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-purple-500 bg-white"
+                            placeholder="예: 3~5문장, 200~300자"
+                          />
+                        </div>
 
-                      <input
-                        type="text"
-                        value={block.title}
-                        onChange={(e) => handleBlockTitleChange(block.id, e.target.value)}
-                        onKeyPress={(e) => handleKeyPress(e, block.id, index)}
-                        placeholder="예: 후킹"
-                        className="block-title-input flex-1 min-w-0 px-2 py-1 text-sm border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-purple-500"
-                      />
+                        <div>
+                          <label className="block font-medium text-gray-600 mb-1">핵심 전략:</label>
+                          <textarea
+                            value={extendedBlock.coreStrategy || ''}
+                            onChange={(e) => {
+                              const updated = {
+                                ...formData,
+                                formatBlocks: formData.formatBlocks.map((b) =>
+                                  b.id === block.id
+                                    ? { ...b, coreStrategy: e.target.value }
+                                    : b
+                                )
+                              };
+                              setFormData(updated);
+                              onUpdate(updated);
+                            }}
+                            rows={2}
+                            className="w-full px-2 py-1 text-xs border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-purple-500 bg-white"
+                            placeholder="예: 인지적 불일치 해소를 통한 신뢰 구축"
+                          />
+                        </div>
 
-                      <button
-                        type="button"
-                        onClick={() => handleDeleteBlock(block.id)}
-                        className="w-6 h-6 text-sm text-red-600 hover:text-red-800 transition-colors shrink-0"
-                        title="삭제"
-                      >
-                        🗑️
-                      </button>
+                        <div>
+                          <div className="flex items-center justify-between mb-1">
+                            <label className="font-medium text-gray-600">주요 기법 (Key Moves):</label>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                const currentKeyMoves = (extendedBlock.keyMoves as string[]) || [];
+                                const updated = {
+                                  ...formData,
+                                  formatBlocks: formData.formatBlocks.map((b) =>
+                                    b.id === block.id
+                                      ? { ...b, keyMoves: [...currentKeyMoves, ''] }
+                                      : b
+                                  )
+                                };
+                                setFormData(updated);
+                                onUpdate(updated);
+                              }}
+                              className="text-xs px-2 py-1 bg-yellow-100 text-yellow-700 rounded hover:bg-yellow-200"
+                            >
+                              + 기법 추가
+                            </button>
+                          </div>
+                          <div className="space-y-1">
+                            {(extendedBlock.keyMoves as string[] || []).map((move, i) => (
+                              <div key={i} className="flex gap-1">
+                                <span className="text-purple-500 font-bold flex-shrink-0 mt-1">•</span>
+                                <input
+                                  type="text"
+                                  value={move}
+                                  onChange={(e) => {
+                                    const updatedKeyMoves = [...(extendedBlock.keyMoves as string[] || [])];
+                                    updatedKeyMoves[i] = e.target.value;
+                                    const updated = {
+                                      ...formData,
+                                      formatBlocks: formData.formatBlocks.map((b) =>
+                                        b.id === block.id
+                                          ? { ...b, keyMoves: updatedKeyMoves }
+                                          : b
+                                      )
+                                    };
+                                    setFormData(updated);
+                                    onUpdate(updated);
+                                  }}
+                                  className="flex-1 px-2 py-1 text-xs border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-purple-500 bg-yellow-50"
+                                  placeholder="예: 제로 프라이싱 효과 활용"
+                                />
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    const updatedKeyMoves = (extendedBlock.keyMoves as string[] || []).filter((_, index) => index !== i);
+                                    const updated = {
+                                      ...formData,
+                                      formatBlocks: formData.formatBlocks.map((b) =>
+                                        b.id === block.id
+                                          ? { ...b, keyMoves: updatedKeyMoves }
+                                          : b
+                                      )
+                                    };
+                                    setFormData(updated);
+                                    onUpdate(updated);
+                                  }}
+                                  className="w-5 h-5 text-xs text-red-600 hover:text-red-800 flex-shrink-0"
+                                >
+                                  ×
+                                </button>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+
+                        <div>
+                          <div className="flex items-center justify-between mb-1">
+                            <label className="font-medium text-green-600">실행 지침 (DOs):</label>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                const currentDos = (extendedBlock.dos as string[]) || [];
+                                const updated = {
+                                  ...formData,
+                                  formatBlocks: formData.formatBlocks.map((b) =>
+                                    b.id === block.id
+                                      ? { ...b, dos: [...currentDos, ''] }
+                                      : b
+                                  )
+                                };
+                                setFormData(updated);
+                                onUpdate(updated);
+                              }}
+                              className="text-xs px-2 py-1 bg-green-100 text-green-700 rounded hover:bg-green-200"
+                            >
+                              + 지침 추가
+                            </button>
+                          </div>
+                          <div className="space-y-1">
+                            {(extendedBlock.dos as string[] || []).map((item, i) => (
+                              <div key={i} className="flex gap-1">
+                                <span className="text-green-500 font-bold flex-shrink-0 mt-1">✓</span>
+                                <input
+                                  type="text"
+                                  value={item}
+                                  onChange={(e) => {
+                                    const updatedDos = [...(extendedBlock.dos as string[] || [])];
+                                    updatedDos[i] = e.target.value;
+                                    const updated = {
+                                      ...formData,
+                                      formatBlocks: formData.formatBlocks.map((b) =>
+                                        b.id === block.id
+                                          ? { ...b, dos: updatedDos }
+                                          : b
+                                      )
+                                    };
+                                    setFormData(updated);
+                                    onUpdate(updated);
+                                  }}
+                                  className="flex-1 px-2 py-1 text-xs border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-purple-500 bg-green-50"
+                                  placeholder="예: 구체적인 수치로 신뢰도 제시"
+                                />
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    const updatedDos = (extendedBlock.dos as string[] || []).filter((_, index) => index !== i);
+                                    const updated = {
+                                      ...formData,
+                                      formatBlocks: formData.formatBlocks.map((b) =>
+                                        b.id === block.id
+                                          ? { ...b, dos: updatedDos }
+                                          : b
+                                      )
+                                    };
+                                    setFormData(updated);
+                                    onUpdate(updated);
+                                  }}
+                                  className="w-5 h-5 text-xs text-red-600 hover:text-red-800 flex-shrink-0"
+                                >
+                                  ×
+                                </button>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+
+                        <div>
+                          <div className="flex items-center justify-between mb-1">
+                            <label className="font-medium text-red-600">금지사항 (DON'Ts):</label>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                const currentDonts = (extendedBlock.donts as string[]) || [];
+                                const updated = {
+                                  ...formData,
+                                  formatBlocks: formData.formatBlocks.map((b) =>
+                                    b.id === block.id
+                                      ? { ...b, donts: [...currentDonts, ''] }
+                                      : b
+                                  )
+                                };
+                                setFormData(updated);
+                                onUpdate(updated);
+                              }}
+                              className="text-xs px-2 py-1 bg-red-100 text-red-700 rounded hover:bg-red-200"
+                            >
+                              + 금지사항 추가
+                            </button>
+                          </div>
+                          <div className="space-y-1">
+                            {(extendedBlock.donts as string[] || []).map((item, i) => (
+                              <div key={i} className="flex gap-1">
+                                <span className="text-red-500 font-bold flex-shrink-0 mt-1">✗</span>
+                                <input
+                                  type="text"
+                                  value={item}
+                                  onChange={(e) => {
+                                    const updatedDonts = [...(extendedBlock.donts as string[] || [])];
+                                    updatedDonts[i] = e.target.value;
+                                    const updated = {
+                                      ...formData,
+                                      formatBlocks: formData.formatBlocks.map((b) =>
+                                        b.id === block.id
+                                          ? { ...b, donts: updatedDonts }
+                                          : b
+                                      )
+                                    };
+                                    setFormData(updated);
+                                    onUpdate(updated);
+                                  }}
+                                  className="flex-1 px-2 py-1 text-xs border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-purple-500 bg-red-50"
+                                  placeholder="예: 과장된 주장 사용 금지"
+                                />
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    const updatedDonts = (extendedBlock.donts as string[] || []).filter((_, index) => index !== i);
+                                    const updated = {
+                                      ...formData,
+                                      formatBlocks: formData.formatBlocks.map((b) =>
+                                        b.id === block.id
+                                          ? { ...b, donts: updatedDonts }
+                                          : b
+                                      )
+                                    };
+                                    setFormData(updated);
+                                    onUpdate(updated);
+                                  }}
+                                  className="w-5 h-5 text-xs text-red-600 hover:text-red-800 flex-shrink-0"
+                                >
+                                  ×
+                                </button>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      </div>
                     </div>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             )}
 
             {formData.formatBlocks.length > 0 && (
               <div className="mt-2 text-xs text-gray-500 bg-gray-100 p-2 rounded">
-                <strong>구조 미리보기:</strong>{' '}
+                <strong>전략적 구조:</strong>{' '}
                 {formData.formatBlocks.map((b, i) => b.title || `블럭${i + 1}`).join(' → ')}
               </div>
             )}
           </div>
 
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">
-              포맷 예시 텍스트
-            </label>
-            <textarea
-              value={formData.formatExampleText}
-              onChange={(e) => handleChange('formatExampleText', e.target.value)}
-              rows={5}
-              className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-purple-500"
-              placeholder="포맷 참고용 예시 (내용은 복사되지 않음)"
-            />
-          </div>
+          {/* 생성 프롬프트 섹션 */}
+          {formData.generationPromptVariables && formData.generationPromptVariables.length > 0 && (
+            <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+              <h4 className="text-sm font-semibold text-blue-800 mb-3 flex items-center gap-2">
+                📝 생성 프롬프트
+              </h4>
 
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">
-              생성 프롬프트 템플릿
-            </label>
-            <textarea
-              value={formData.generationPromptTemplate}
-              onChange={(e) => handleChange('generationPromptTemplate', e.target.value)}
-              rows={3}
-              className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-purple-500"
-              placeholder="예: 길이 500자 이내, CTA 포함"
-            />
-          </div>
+              <div className="mb-3">
+                <span className="font-medium text-gray-600 text-sm">변수:</span>
+                <div className="mt-2 flex flex-wrap gap-2">
+                  {formData.generationPromptVariables.map((variable, i) => (
+                    <span key={i} className="px-3 py-1 bg-blue-100 text-blue-800 rounded-full text-xs font-mono">
+                      {variable.name}
+                    </span>
+                  ))}
+                </div>
+              </div>
+
+              {formData.generationPromptTemplate && (
+                <div>
+                  <span className="font-medium text-gray-600 text-sm">프롬프트 템플릿:</span>
+                  <textarea
+                    value={formData.generationPromptTemplate}
+                    onChange={(e) => handleChange('generationPromptTemplate', e.target.value)}
+                    rows={3}
+                    className="w-full mt-2 px-3 py-2 border border-blue-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
+                    placeholder="생성 프롬프트 템플릿..."
+                  />
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* 기존 예시 텍스트 - 하위 호환성 유지 */}
+          {formData.formatExampleText && (
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                참고 예시 (하위 호환성)
+              </label>
+              <textarea
+                value={formData.formatExampleText}
+                onChange={(e) => handleChange('formatExampleText', e.target.value)}
+                rows={3}
+                className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-purple-500 bg-gray-50"
+                placeholder="기존 예시 텍스트"
+              />
+            </div>
+          )}
         </>
       )}
 

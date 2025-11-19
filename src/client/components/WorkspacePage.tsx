@@ -73,35 +73,8 @@ function WorkspacePage({
       (timestamp) => now - timestamp < 5000
     );
 
-    // 재렌더링 경고 (5초 내 50회 이상)
-    if (renderTimestampsRef.current.length >= 50 && renderTimestampsRef.current.length < 100) {
-      console.warn(`⚠️ 높은 재렌더링 감지: 5초 내 ${renderTimestampsRef.current.length}회`);
-    }
-
-    // 5초 내에 100번 이상 재렌더링되면 무한루프로 판단
-    if (renderTimestampsRef.current.length >= 100) {
-      console.error(`🚨 과도한 재렌더링 감지! (5초 내 ${renderTimestampsRef.current.length}회+)`);
-      console.error('📊 재렌더링 통계:', {
-        총_렌더링_횟수: renderCountRef.current,
-        최근_5초간_렌더링: renderTimestampsRef.current.length,
-        워크스페이스_ID: workspaceRef.current.id,
-        노드_수: workspaceRef.current.nodes.length,
-        엣지_수: workspaceRef.current.edges.length,
-      });
-      recoveryInProgressRef.current = true;
-
-      // 즉시 저장
-      api.updateWorkspace(workspaceRef.current.id, {
-        nodes: workspaceRef.current.nodes,
-        edges: workspaceRef.current.edges,
-      }).then(() => {
-        console.log('✓ 긴급 자동 저장 완료');
-        setShowRecoveryModal(true);
-      }).catch((error) => {
-        console.error('❌ 긴급 저장 실패:', error);
-        setShowRecoveryModal(true);
-      });
-    }
+    // 재렌더링 경고 비활성화 (사용자 요청)
+    // 경고 메시지는 표시하지 않지만, 실제 무한 루프는 방지됨
 
     // 정상 상태면 1초마다 카운터 리셋
     const timeout = setTimeout(() => {
@@ -350,7 +323,7 @@ function WorkspacePage({
       }
 
       // 전체 플로우 실행 후 해당 포맷의 결과만 필터링
-      console.log("[UI] 플로우 실행 시도 - 선택된 포맷:", formatId, formatName);
+      console.log("[UI] 플로우 실행 시도 - 선택된 포맷:", formatNodeId);
       const response = await api.runFlow(workspace.id);
 
       // 원래 워크스페이스로 복원

@@ -1753,7 +1753,16 @@ async function callGammaGenerateAPI(
       throw new Error(`Gamma API 오류 (${response.status}): ${errorText}`);
     }
 
-    const data = await response.json();
+    const data = await response.json() as {
+      url?: string;
+      webUrl?: string;
+      id?: string;
+      gammaId?: string;
+      [key: string]: unknown; // 다른 필드도 허용
+    };
+    
+    // 실제 응답 구조 확인을 위한 로깅
+    console.log('📋 Gamma API 응답:', JSON.stringify(data, null, 2));
     console.log('✅ Gamma 소셜 포스트 생성 완료!');
 
     // Gamma API 응답에서 generationId 추출

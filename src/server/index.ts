@@ -60,5 +60,5 @@ app.listen(PORT, () => {
   console.log(`\n🚀 Server running on http://localhost:${PORT}`);
   console.log(`📡 API available at http://localhost:${PORT}/api`);
   console.log(`🌐 Client served from ${clientBuildPath}`);
-  console.log(`💡 Using ${process.env.GEMINI_API_KEY ? 'REAL (Gemini 2.5 Pro)' : 'MOCK'} LLM mode\n`);
+  console.log(`💡 Using ${process.env.OPENAI_API_KEY ? 'REAL (OpenAI GPT-5.1)' : 'MOCK'} LLM mode\n`);
 });

@@ -9,7 +9,7 @@ import type {
   ContentFormatNodeConfig,
   ExecutedPath,
 } from './types.js';
-import { callLLM, evaluateChannelRelevance, selectBestFormat, generateImage, generateGammaSocialPost } from './llm.js';
+import { callLLM_SingleFlow, evaluateChannelRelevance, selectBestFormat, generateImage, generateGammaSocialPost } from './llm.js';
 
 /**
  * 노드 타입 가드
@@ -193,13 +193,14 @@ export async function executeFlow(
       try {
         const channelEval = await evaluateChannelRelevance(inputConfig, channelConfig);
 
-        const statusIcon = channelEval.suitable ? '✓' : '✗';
+        const isSuitable = channelEval.score >= 50;
+        const statusIcon = isSuitable ? '✓' : '✗';
         console.log(
-          `   ${statusIcon} "${channelNode.data.label}" - ${channelEval.suitable ? '적합' : '부적합'} (신뢰도: ${channelEval.confidence}%)`
+          `   ${statusIcon} "${channelNode.data.label}" - ${isSuitable ? '적합' : '부적합'} (점수: ${channelEval.score}점)`
         );
         console.log(`      이유: ${channelEval.reason}`);
 
-        if (!channelEval.suitable) {
+        if (!isSuitable) {
           skippedChannels.push({
             inputNode,
             channelNode,
@@ -232,7 +233,7 @@ export async function executeFlow(
         const formatSelection = await selectBestFormat(
           inputConfig,
           channelConfig,
-          formatConfigs
+          formatConfigs.map(f => f.config) as ContentFormatNodeConfig[]
         );
 
         if (!formatSelection) {
@@ -241,13 +242,13 @@ export async function executeFlow(
         }
 
         console.log(
-          `      ✓ 선택: "${formatSelection.selectedFormat}" (신뢰도: ${formatSelection.confidence}%)`
+          `      ✓ 선택: "${formatSelection.bestFormat.name}"`
         );
         console.log(`      이유: ${formatSelection.reason}`);
 
         // 선택된 Format 노드 찾기
         const selectedFormatNode = formatChildren.find(
-          (f) => f.data.label === formatSelection.selectedFormat
+          (f) => f.data.label === formatSelection.bestFormat.name
         );
 
         if (!selectedFormatNode) {
@@ -324,7 +325,7 @@ export async function executeFlow(
       if (isGammaSocialPost) {
         // Gamma 소셜 포스트 생성
         console.log('   📱 Gamma 소셜 포스트 생성 중...');
-        const { gammaUrl, inputText } = await generateGammaSocialPost(inputConfig, channelConfig, formatConfig);
+        const gammaUrl = await generateGammaSocialPost(inputConfig, channelConfig, formatConfig);
 
         content = {
           id: uuidv4(),
@@ -332,7 +333,7 @@ export async function executeFlow(
           channelNodeId: channelNode.id,
           contentFormatNodeId: formatNode.id,
           contentType: 'gamma',
-          finalText: `Gamma 소셜 포스트 생성 완료\n\nURL: ${gammaUrl}\n\n입력 텍스트 (${inputText.length}자):\n${inputText.substring(0, 200)}...`,
+          finalText: `Gamma 소셜 포스트 생성 완료\n\nURL: ${gammaUrl}`,
           gammaUrl: gammaUrl,
           sourceTopic: inputConfig.topic,
           createdAt: new Date().toISOString(),
@@ -340,7 +341,7 @@ export async function executeFlow(
       } else if (isImageContent) {
         // 이미지 생성
         console.log('   🖼️  이미지 콘텐츠 생성 중...');
-        const { imageData, promptUsed } = await generateImage(inputConfig, channelConfig, formatConfig);
+        const imageData = await generateImage(inputConfig, channelConfig, formatConfig);
 
         content = {
           id: uuidv4(),
@@ -348,15 +349,15 @@ export async function executeFlow(
           channelNodeId: channelNode.id,
           contentFormatNodeId: formatNode.id,
           contentType: 'image',
-          finalText: `이미지 생성 완료\n\n사용된 프롬프트:\n${promptUsed}`,
+          finalText: '이미지 생성 완료',
           imageData: imageData,
           sourceTopic: inputConfig.topic,
           createdAt: new Date().toISOString(),
         };
       } else {
-        // 텍스트 생성
-        console.log('   📝 텍스트 콘텐츠 생성 중...');
-        const generatedText = await callLLM(inputConfig, channelConfig, formatConfig);
+        // 텍스트 생성 (1회성 싱글 플로우)
+        console.log('   📝 텍스트 콘텐츠 생성 중 (1회성 싱글 플로우)...');
+        const generatedText = await callLLM_SingleFlow(inputConfig, channelConfig, formatConfig);
 
         content = {
           id: uuidv4(),
@@ -382,10 +383,8 @@ export async function executeFlow(
       }
     } catch (error) {
       console.error(`✗ 생성 실패:`, error);
-      if (i < sortedPaths.length - 1) {
-        console.log('⏳ 5초 대기 중...\n');
-        await new Promise((resolve) => setTimeout(resolve, 5000));
-      }
+      // 에러를 즉시 전파하여 SSE로 전달되도록 함
+      throw error;
     }
   }
 

@@ -86,6 +86,7 @@ export interface ContentFormatNodeConfig {
   kind: "content_format";
   name: string;
   mappedContentType: string;
+  targetLanguage?: string; // 타겟 언어 (기본값: 'ko')
   formatBlocks: FormatBlock[]; // 블럭 형식 구조
   formatExampleText: string;
   formatStructureDescription: string; // 하위 호환성을 위해 유지

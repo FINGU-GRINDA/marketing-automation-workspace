@@ -21,15 +21,19 @@ if (!OPENAI_API_KEY) {
 function buildGenerationContext(
   inputConfig: InputNodeConfig,
   channelConfig: ChannelNodeConfig,
-  formatConfig: ContentFormatNodeConfig
+  formatConfig: ContentFormatNodeConfig,
+  targetLanguage?: string
 ): object {
+  // 포맷에 저장된 targetLanguage 사용, 없으면 inputConfig의 targetLanguage 사용
+  const finalTargetLanguage = targetLanguage || formatConfig.targetLanguage || inputConfig.targetLanguage || 'ko';
+
   const generationContext = {
     inputData: {
       topic: inputConfig.topic,
       rawData: inputConfig.rawData,
       title: inputConfig.title || inputConfig.topic,
       message: inputConfig.message || '',
-      targetLanguage: inputConfig.targetLanguage || 'ko',
+      targetLanguage: finalTargetLanguage,
     },
     contentFormat: formatConfig,
     channel: channelConfig,
@@ -314,7 +318,8 @@ export async function callLLM(
 export async function callLLM_SingleFlow(
   inputConfig: InputNodeConfig,
   channelConfig: ChannelNodeConfig,
-  formatConfig: ContentFormatNodeConfig
+  formatConfig: ContentFormatNodeConfig,
+  targetLanguage?: string
 ): Promise<string> {
   try {
     console.log('🚀 포스트 생성 시작 (1회성 싱글 플로우)...');
@@ -324,14 +329,21 @@ export async function callLLM_SingleFlow(
       format: formatConfig.name
     });
 
-    const generationContext = buildGenerationContext(inputConfig, channelConfig, formatConfig);
-    const systemPrompt = buildSystemPrompt(channelConfig, inputConfig.targetLanguage);
+    // 포맷에 저장된 targetLanguage 사용, 없으면 inputConfig의 targetLanguage 사용
+    const finalTargetLanguage = targetLanguage || formatConfig.targetLanguage || inputConfig.targetLanguage || 'ko';
+    const generationContext = buildGenerationContext(inputConfig, channelConfig, formatConfig, finalTargetLanguage);
+    const systemPrompt = buildSystemPrompt(channelConfig, finalTargetLanguage);
 
     const singleFlowPrompt = `${systemPrompt}
 
 컨텍스트에 포함된 정보(채널 설정, 톤앤매너, 입력 데이터, 채널 지식, 선택된 포맷/블록 정보 등)에만 의존해서, 마케팅 콘텐츠를 작성하라.
 
 **작성 규칙:**
+
+**언어 설정**
+- 생성할 콘텐츠의 언어는 inputData의 targetLanguage에 명시된 언어를 반드시 따라야 한다.
+- 한국어(ko)로 설정된 경우 한국어로, 영어(en)로 설정된 경우 영어로, 해당 언어로 콘텐츠를 생성한다.
+- 언어 설정과 관계없이 다른 언어로 생성하지 말고, 지정된 언어로만 작성한다.
 
 **데이터 출처**
 - 사용 가능한 정보는 generationContext와 systemPrompt 안에 있는 내용으로 한정한다.

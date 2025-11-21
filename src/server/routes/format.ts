@@ -59,11 +59,13 @@ router.post('/from-reference', async (req, res) => {
 
 5. **채널과 타겟 언어 고려**
    - ${channelType}와 ${targetLanguage}에 맞게, 블록 이름과 설명을 자연스럽게 맞춘다.
+   - 생성될 포맷의 모든 텍스트(블록 이름, 설명, 전략 내용)은 ${targetLanguage}로 작성한다.
+   - 언어별 표현 특성과 문화적 맥락을 고려하여 적절한 용어 선택한다.
 
 출력 형식(항상 이 JSON 스키마를 그대로 사용):
 
 {
-  "formatName": "포맷 이름을 짧고 명확하게 작성",
+  "formatName": "포맷 이름을 짧고 명확하게 작성 (${targetLanguage} 텍스트)",
   "formatType": "예: SNS 포스트, 랜딩페이지, 뉴스레터, 세일즈 메일 등",
   "overallStrategy": {
     "funnelStage": "이 포맷이 주로 겨냥하는 퍼널 단계(예: 인지도, 관심, 전환, 리텐션 등)",
@@ -76,21 +78,21 @@ router.post('/from-reference', async (req, res) => {
   },
   "blocks": [
     {
-      "name": "블록 이름 (예: 인트로 훅, 문제 공감, 솔루션 제안, 케이스/증거, CTA 등)",
-      "description": "이 블록의 역할과 기대하는 효과를, 레퍼런스 구조에 맞춰 설명",
-      "recommendedLength": "채널과 레퍼런스 길이에 맞는 간단한 길이 가이드 (예: 한 단락, 2~3문장 등)",
-      "coreStrategy": "이 블록에서 실제로 사용되는 설득 전략이나 연출 방식 요약",
+      "name": "블록 이름 (예: 인트로 훅, 문제 공감, 솔루션 제안, 케이스/증거, CTA 등) - ${targetLanguage} 텍스트로 작성",
+      "description": "이 블록의 역할과 기대하는 효과를, 레퍼런스 구조에 맞춰 설명 - ${targetLanguage} 텍스트로 작성",
+      "recommendedLength": "채널과 레퍼런스 길이에 맞는 간단한 길이 가이드 (예: 한 단락, 2~3문장 등) - ${targetLanguage} 텍스트로 작성",
+      "coreStrategy": "이 블록에서 실제로 사용되는 설득 전략이나 연출 방식 요약 - ${targetLanguage} 텍스트로 작성",
       "keyMoves": [
-        "이 블록에서 자주 쓰이는 구체적인 표현 패턴이나 전개 방법",
-        "예: 문제 상황을 질문 형태로 던지기, 독자의 경험을 상기시키는 한 문장 추가 등"
+        "이 블록에서 자주 쓰이는 구체적인 표현 패턴이나 전개 방법 - ${targetLanguage} 텍스트로 작성",
+        "예: 문제 상황을 질문 형태로 던지기, 독자의 경험을 상기시키는 한 문장 추가 등 - ${targetLanguage} 텍스트로 작성"
       ],
       "dos": [
-        "레퍼런스에서 효과적으로 보이는 점을 바탕으로 이 블록에서 하면 좋은 것",
-        "톤, 강도, 구체성 등에 대한 간단한 가이드"
+        "레퍼런스에서 효과적으로 보이는 점을 바탕으로 이 블록에서 하면 좋은 것 - ${targetLanguage} 텍스트로 작성",
+        "톤, 강도, 구체성 등에 대한 간단한 가이드 - ${targetLanguage} 텍스트로 작성"
       ],
       "donts": [
-        "레퍼런스의 톤이나 구조와 어긋나는 방식으로 쓰지 않기 위한 주의사항",
-        "채널 특성상 피해야 할 과도한 길이/톤/정보량 등"
+        "레퍼런스의 톤이나 구조와 어긋나는 방식으로 쓰지 않기 위한 주의사항 - ${targetLanguage} 텍스트로 작성",
+        "채널 특성상 피해야 할 과도한 길이/톤/정보량 등 - ${targetLanguage} 텍스트로 작성"
       ]
     }
   ]
@@ -130,7 +132,7 @@ router.post('/from-reference', async (req, res) => {
       },
       data: {
         label: formatData.formatName,
-        config: createFormatConfig(formatData)
+        config: createFormatConfig(formatData, targetLanguage)
       },
       style: {
         width: 150,
@@ -179,11 +181,12 @@ router.post('/from-reference', async (req, res) => {
 /**
  * AI 생성 데이터로 ContentFormatNodeConfig 생성
  */
-function createFormatConfig(formatData: any): ContentFormatNodeConfig {
+function createFormatConfig(formatData: any, targetLanguage: string = 'ko'): ContentFormatNodeConfig {
   return {
     kind: 'content_format',
     name: formatData.formatName,
     mappedContentType: formatData.formatType,
+    targetLanguage: targetLanguage,
     formatBlocks: formatData.blocks.map((block: any) => ({
       id: uuidv4(),
       title: block.name,

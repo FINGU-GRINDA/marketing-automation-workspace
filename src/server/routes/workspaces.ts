@@ -325,7 +325,7 @@ router.post('/:id/channels/:channelId/suggest-formats', async (req, res) => {
         kind: 'content_format',
         name: suggestion.formatName,
         mappedContentType: suggestion.formatType,
-        formatBlocks: suggestion.blocks.map((block) => ({
+        formatBlocks: suggestion.blocks.map((block: any) => ({
           id: uuidv4(),
           title: block.name,
           description: '',

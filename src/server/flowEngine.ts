@@ -357,7 +357,9 @@ export async function executeFlow(
       } else {
         // 텍스트 생성 (1회성 싱글 플로우)
         console.log('   📝 텍스트 콘텐츠 생성 중 (1회성 싱글 플로우)...');
-        const generatedText = await callLLM_SingleFlow(inputConfig, channelConfig, formatConfig);
+        // 포맷에 저장된 targetLanguage 사용, 없으면 inputConfig의 targetLanguage 사용
+        const targetLanguage = formatConfig.targetLanguage || inputConfig.targetLanguage || 'ko';
+        const generatedText = await callLLM_SingleFlow(inputConfig, channelConfig, formatConfig, targetLanguage);
 
         content = {
           id: uuidv4(),

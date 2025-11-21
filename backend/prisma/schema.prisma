@@ -1,0 +1,156 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum WorkspaceStatus {
+  collecting
+  paused
+  completed
+  failed
+}
+
+enum ScenarioStatus {
+  active
+  paused
+  failed_by_quality
+  exhausted
+}
+
+enum ScenarioRiskLevel {
+  low
+  medium
+  high
+}
+
+enum ConversationRole {
+  user
+  assistant
+}
+
+model Workspace {
+  id                 String              @id @default(cuid())
+  name               String
+  description        String?
+  targetCompanyCount Int
+  status             WorkspaceStatus     @default(collecting)
+  createdAt          DateTime            @default(now())
+  updatedAt          DateTime            @updatedAt
+
+  config             WorkspaceConfig?
+  requirement        RequirementSummary?
+  messages           ConversationMessage[]
+  scenarios          SearchScenario[]
+  scenarioRuns       ScenarioRun[]
+  companies          Company[]
+
+  @@index([status])
+}
+
+model WorkspaceConfig {
+  id                        String   @id @default(cuid())
+  workspaceId               String   @unique
+  runScoreThreshold         Float
+  minRunsBeforeFail         Int      @default(3)
+  maxConsecutiveFails       Int      @default(3)
+  maxParallelScenarios      Int      @default(2)
+  maxRunsPerScenario        Int      @default(30)
+  maxTotalRunsPerWorkspace  Int      @default(200)
+  minCompanyScore           Float    @default(6)
+  staleRunWindow            Int      @default(10)
+  createdAt                 DateTime @default(now())
+  updatedAt                 DateTime @updatedAt
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id])
+}
+
+model RequirementSummary {
+  id           String   @id @default(cuid())
+  workspaceId  String   @unique
+  textSummary  String
+  normalized   Json
+  warnings     Json?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id])
+}
+
+model ConversationMessage {
+  id          String           @id @default(cuid())
+  workspaceId String
+  role        ConversationRole
+  content     String
+  createdAt   DateTime         @default(now())
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id])
+
+  @@index([workspaceId, createdAt(sort: Desc)])
+}
+
+model SearchScenario {
+  id            String            @id @default(cuid())
+  workspaceId   String
+  name          String
+  baseQuery     String
+  status        ScenarioStatus    @default(active)
+  riskLevel     ScenarioRiskLevel
+  countryCodes  String[]
+  language      String?
+  notes         String?
+  failCount     Int               @default(0)
+  createdAt     DateTime          @default(now())
+  updatedAt     DateTime          @updatedAt
+  lastRunAt     DateTime?
+
+  workspace    Workspace    @relation(fields: [workspaceId], references: [id])
+  runs         ScenarioRun[]
+  companies    Company[]
+
+  @@index([workspaceId, status])
+  @@index([workspaceId, riskLevel])
+}
+
+model ScenarioRun {
+  id              String   @id @default(cuid())
+  workspaceId     String
+  scenarioId      String
+  runScore        Float
+  resultCount     Int
+  failedByScore   Boolean
+  newCompanyCount Int       @default(0)
+  metadata        Json?
+  createdAt       DateTime  @default(now())
+
+  workspace Workspace     @relation(fields: [workspaceId], references: [id])
+  scenario  SearchScenario @relation(fields: [scenarioId], references: [id])
+
+  @@index([workspaceId, createdAt])
+  @@index([scenarioId, createdAt(sort: Desc)])
+}
+
+model Company {
+  id                   String         @id @default(cuid())
+  workspaceId          String
+  scenarioId           String?
+  canonicalWebsiteUrl  String
+  name                 String?
+  description          String?
+  tags                 String[]
+  score                Float
+  reason               String?
+  country              String?
+  language             String?
+  createdAt            DateTime       @default(now())
+  updatedAt            DateTime       @updatedAt
+
+  workspace Workspace     @relation(fields: [workspaceId], references: [id])
+  scenario  SearchScenario @relation(fields: [scenarioId], references: [id])
+
+  @@unique([workspaceId, canonicalWebsiteUrl])
+  @@index([workspaceId, score])
+}

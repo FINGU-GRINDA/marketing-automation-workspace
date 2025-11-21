@@ -173,6 +173,27 @@ function ContentFormatNodeForm({ node, onUpdate }: ContentFormatNodeFormProps) {
 
       <div>
         <label className="block text-sm font-medium text-gray-700 mb-1">
+          언어 설정
+        </label>
+        <select
+          value={formData.targetLanguage || 'ko'}
+          onChange={(e) => handleChange('targetLanguage', e.target.value)}
+          className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-purple-500 bg-white"
+        >
+          <option value="ko">한국어</option>
+          <option value="en">English</option>
+          <option value="ja">日本語</option>
+          <option value="zh">中文</option>
+          <option value="es">Español</option>
+          <option value="fr">Français</option>
+          <option value="de">Deutsch</option>
+          <option value="ru">Русский</option>
+        </select>
+        <p className="text-xs text-gray-500 mt-1">이 포맷으로 생성될 콘텐츠의 언어를 선택하세요</p>
+      </div>
+
+      <div>
+        <label className="block text-sm font-medium text-gray-700 mb-1">
           콘텐츠 유형
         </label>
         <select

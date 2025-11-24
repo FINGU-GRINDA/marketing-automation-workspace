@@ -8,8 +8,8 @@ import type {
   SearchNodeResult,
   InputNodeConfig,
   ChannelNodeConfig
-} from '../types';
-import { searchMultiplePlatforms } from '../searchClient';
+} from '../types.js';
+import { searchMultiplePlatforms } from '../searchClient.js';
 
 const router = express.Router();
 

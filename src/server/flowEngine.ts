@@ -7,9 +7,13 @@ import type {
   InputNodeConfig,
   ChannelNodeConfig,
   ContentFormatNodeConfig,
+  RedditSearchNodeConfig,
+  SearchNodeConfig,
+  RedditSearchResult,
+  Topic,
   ExecutedPath,
 } from './types.js';
-import { callLLM_SingleFlow, evaluateChannelRelevance, selectBestFormat, generateImage, generateGammaSocialPost } from './llm.js';
+import { callLLM_SingleFlow, callLLMRedditSearch, evaluateChannelRelevance, selectBestFormat, generateImage, generateGammaSocialPost, detectLanguage, translateToKorean } from './llm.js';
 
 /**
  * 노드 타입 가드
@@ -26,6 +30,24 @@ function isContentFormatNode(
   node: Node
 ): node is Node & { data: { config: ContentFormatNodeConfig } } {
   return node.type === 'content_format';
+}
+
+function isRedditSearchNode(
+  node: Node
+): node is Node & { data: { config: RedditSearchNodeConfig } } {
+  return node.type === 'reddit_search';
+}
+
+function isSearchNode(
+  node: Node
+): node is Node & { data: { config: SearchNodeConfig } } {
+  return node.type === 'search';
+}
+
+function isContentNode(
+  node: Node
+): node is Node & { data: { config: any } } {
+  return node.type === 'content';
 }
 
 /**
@@ -49,8 +71,122 @@ interface ExecutionPath {
   formatNode: Node & { data: { config: ContentFormatNodeConfig } };
 }
 
+/**
+ * Reddit 서치 실행 경로
+ * Input → RedditSearch → Channel 순서
+ */
+interface RedditSearchExecutionPath {
+  inputNode: Node & { data: { config: InputNodeConfig } };
+  redditSearchNode: Node & { data: { config: RedditSearchNodeConfig } };
+  channelNode: Node & { data: { config: ChannelNodeConfig } };
+}
+
+/**
+ * 서치 실행 경로
+ * Input → Channel → Search → Content 순서
+ */
+interface SearchExecutionPath {
+  inputNode: Node & { data: { config: InputNodeConfig } };
+  channelNode: Node & { data: { config: ChannelNodeConfig } };
+  searchNode: Node & { data: { config: SearchNodeConfig } };
+  contentNode: Node & { data: { config: any } }; // Content nodes can have varying configs
+}
+
 function findExecutionPaths(workspace: Workspace): ExecutionPath[] {
   const paths: ExecutionPath[] = [];
+
+  console.log(`[DEBUG] findExecutionPaths: 시작`);
+  console.log(`[DEBUG] 전체 노드 수: ${workspace.nodes.length}`);
+  console.log(`[DEBUG] 전체 엣지 수: ${workspace.edges.length}`);
+
+  // 1. Input 노드 찾기
+  const inputNodes = workspace.nodes.filter(isInputNode);
+  console.log(`[DEBUG] Input 노드 수: ${inputNodes.length}`);
+
+  for (const inputNode of inputNodes) {
+    console.log(`[DEBUG] Input 노드: ${inputNode.data.label} (ID: ${inputNode.id})`);
+
+    // 2. Input 노드의 자식 Channel 노드 찾기
+    const channelChildren = findChildNodes(
+      inputNode.id,
+      workspace.edges,
+      workspace.nodes
+    ).filter(isChannelNode);
+
+    console.log(`[DEBUG] ${inputNode.data.label}의 자식 Channel 노드 수: ${channelChildren.length}`);
+
+    for (const channelNode of channelChildren) {
+      console.log(`[DEBUG]   - Channel 노드: ${channelNode.data.label} (ID: ${channelNode.id})`);
+
+      // 3. Channel 노드의 자식 ContentFormat 노드 찾기
+      const formatChildren = findChildNodes(
+        channelNode.id,
+        workspace.edges,
+        workspace.nodes
+      ).filter(isContentFormatNode);
+
+      console.log(`[DEBUG]   - ${channelNode.data.label}의 자식 Format 노드 수: ${formatChildren.length}`);
+
+      for (const formatNode of formatChildren) {
+        console.log(`[DEBUG]     - Format 노드: ${formatNode.data.label} (ID: ${formatNode.id})`);
+        paths.push({
+          inputNode,
+          channelNode,
+          formatNode,
+        });
+      }
+    }
+  }
+
+  console.log(`[DEBUG] findExecutionPaths: 완료, 총 경로 수: ${paths.length}`);
+  return paths;
+}
+
+/**
+ * Reddit 서치 실행 가능한 경로 찾기
+ * Input → RedditSearch → Channel 순서
+ */
+function findRedditSearchExecutionPaths(workspace: Workspace): RedditSearchExecutionPath[] {
+  const paths: RedditSearchExecutionPath[] = [];
+
+  // 1. Input 노드 찾기
+  const inputNodes = workspace.nodes.filter(isInputNode);
+
+  for (const inputNode of inputNodes) {
+    // 2. Input 노드의 자식 RedditSearch 노드 찾기
+    const redditSearchChildren = findChildNodes(
+      inputNode.id,
+      workspace.edges,
+      workspace.nodes
+    ).filter(isRedditSearchNode);
+
+    for (const redditSearchNode of redditSearchChildren) {
+      // 3. RedditSearch 노드의 자식 Channel 노드 찾기
+      const channelChildren = findChildNodes(
+        redditSearchNode.id,
+        workspace.edges,
+        workspace.nodes
+      ).filter(isChannelNode);
+
+      for (const channelNode of channelChildren) {
+        paths.push({
+          inputNode,
+          redditSearchNode,
+          channelNode,
+        });
+      }
+    }
+  }
+
+  return paths;
+}
+
+/**
+ * 서치 실행 가능한 경로 찾기
+ * Input → Channel → Search → Content 순서
+ */
+function findSearchExecutionPaths(workspace: Workspace): SearchExecutionPath[] {
+  const paths: SearchExecutionPath[] = [];
 
   // 1. Input 노드 찾기
   const inputNodes = workspace.nodes.filter(isInputNode);
@@ -64,19 +200,29 @@ function findExecutionPaths(workspace: Workspace): ExecutionPath[] {
     ).filter(isChannelNode);
 
     for (const channelNode of channelChildren) {
-      // 3. Channel 노드의 자식 ContentFormat 노드 찾기
-      const formatChildren = findChildNodes(
+      // 3. Channel 노드의 자식 Search 노드 찾기
+      const searchChildren = findChildNodes(
         channelNode.id,
         workspace.edges,
         workspace.nodes
-      ).filter(isContentFormatNode);
+      ).filter(isSearchNode);
 
-      for (const formatNode of formatChildren) {
-        paths.push({
-          inputNode,
-          channelNode,
-          formatNode,
-        });
+      for (const searchNode of searchChildren) {
+        // 4. Search 노드의 자식 Content 노드 찾기
+        const contentChildren = findChildNodes(
+          searchNode.id,
+          workspace.edges,
+          workspace.nodes
+        ).filter(isContentNode);
+
+        for (const contentNode of contentChildren) {
+          paths.push({
+            inputNode,
+            channelNode,
+            searchNode,
+            contentNode,
+          });
+        }
       }
     }
   }
@@ -150,12 +296,21 @@ export async function executeFlow(
     // 모든 실행 가능한 경로 찾기
     const allPaths = findExecutionPaths(workspace);
 
+    console.log(`   발견된 경로: ${allPaths.length}개`);
+    console.log(`   선택된 포맷 ID: ${selectedFormatIds.join(', ')}`);
+
+    allPaths.forEach((path, idx) => {
+      const isMatch = selectedFormatIds.includes(path.formatNode.id);
+      console.log(`   [경로 ${idx + 1}] ${path.inputNode.data.label} → ${path.channelNode.data.label} → ${path.formatNode.data.label}`);
+      console.log(`      Format ID: ${path.formatNode.id}`);
+      console.log(`      선택됨: ${isMatch ? '✓' : '✗'}`);
+    });
+
     // 선택된 포맷이 포함된 경로만 필터링
     const filteredPaths = allPaths.filter((path) =>
       selectedFormatIds.includes(path.formatNode.id)
     );
 
-    console.log(`   발견된 경로: ${allPaths.length}개`);
     console.log(`   선택된 포맷 경로: ${filteredPaths.length}개`);
 
     filteredPaths.forEach((path) => {
@@ -361,13 +516,35 @@ export async function executeFlow(
         const targetLanguage = formatConfig.targetLanguage || inputConfig.targetLanguage || 'ko';
         const generatedText = await callLLM_SingleFlow(inputConfig, channelConfig, formatConfig, targetLanguage);
 
+        // 생성된 텍스트의 언어 감지
+        console.log('   🔍 생성된 텍스트의 언어 감지 중...');
+        const languageInfo = await detectLanguage(generatedText);
+        console.log(`   ✓ 감지된 언어: ${languageInfo.language} (한국어: ${languageInfo.isKorean})`);
+
+        let finalText = generatedText;
+        let isTranslated = false;
+        let originalText: string | undefined;
+        let detectedLanguage = languageInfo.language;
+
+        // 한국어가 아닌 경우 한국어로 번역하고 원본도 저장
+        if (!languageInfo.isKorean) {
+          console.log('   🔄 한국어 번역 실행 중...');
+          finalText = await translateToKorean(generatedText);
+          isTranslated = true;
+          originalText = generatedText;
+          console.log('   ✓ 한국어 번역 완료 (원본과 번역본 모두 저장)');
+        }
+
         content = {
           id: uuidv4(),
           workspaceId: workspace.id,
           channelNodeId: channelNode.id,
           contentFormatNodeId: formatNode.id,
           contentType: 'text',
-          finalText: generatedText,
+          finalText: finalText,
+          originalText: originalText,
+          detectedLanguage: detectedLanguage,
+          isTranslated: isTranslated,
           sourceTopic: inputConfig.topic,
           createdAt: new Date().toISOString(),
         };
@@ -393,4 +570,353 @@ export async function executeFlow(
   console.log(`\n=== 플로우 실행 완료: ${results.length}개 콘텐츠 생성됨 ===\n`);
 
   return { results, executedPaths: executedPathInfos, skippedPaths: skippedPathInfos };
+}
+
+/**
+ * Reddit 서치 실행 함수
+ * Input → RedditSearch → Channel 경로를 실행하여 Topic 생성
+ */
+export async function executeRedditSearch(
+  workspace: Workspace,
+  callbacks?: {
+    onPathStart?: (path: { inputNodeId: string; redditSearchNodeId: string; channelNodeId: string }) => void;
+    onPathComplete?: (path: { inputNodeId: string; redditSearchNodeId: string; channelNodeId: string }, result: RedditSearchResult, updatedWorkspace: Workspace) => void;
+  }
+): Promise<{ results: RedditSearchResult[]; executedPaths: Array<{ inputNodeId: string; redditSearchNodeId: string; channelNodeId: string }>; updatedWorkspace: Workspace }> {
+  console.log(`\n=== Reddit 서치 실행 시작 ===`);
+
+  // 1. Reddit 서치 실행 경로 찾기
+  const redditSearchPaths = findRedditSearchExecutionPaths(workspace);
+
+  if (redditSearchPaths.length === 0) {
+    console.log('Reddit 서치 실행 가능한 경로가 없습니다. (Input → RedditSearch → Channel)');
+    return { results: [], executedPaths: [], updatedWorkspace: workspace };
+  }
+
+  console.log(`발견된 Reddit 서치 경로: ${redditSearchPaths.length}개`);
+
+  const results: RedditSearchResult[] = [];
+  const executedPaths: Array<{ inputNodeId: string; redditSearchNodeId: string; channelNodeId: string }> = [];
+  let updatedWorkspace = { ...workspace };
+
+  // 2. 각 경로 실행
+  for (let i = 0; i < redditSearchPaths.length; i++) {
+    const path = redditSearchPaths[i];
+    const { inputNode, redditSearchNode, channelNode } = path;
+
+    const pathInfo = {
+      inputNodeId: inputNode.id,
+      redditSearchNodeId: redditSearchNode.id,
+      channelNodeId: channelNode.id
+    };
+
+    try {
+      console.log(
+        `[${i + 1}/${redditSearchPaths.length}] Reddit 서치 중: ${inputNode.data.label} → ${redditSearchNode.data.label} → ${channelNode.data.label}`
+      );
+
+      callbacks?.onPathStart?.(pathInfo);
+
+      const inputConfig = inputNode.data.config;
+      const redditSearchConfig = redditSearchNode.data.config;
+      const channelConfig = channelNode.data.config;
+
+      // Reddit 서치 실행
+      console.log('   🔍 Reddit 분석 실행 중...');
+      const redditResult = await callLLMRedditSearch(inputConfig, channelConfig, redditSearchConfig);
+
+      // 생성된 주제들을 채널의 topics 아카이브에 추가
+      const newTopics: Topic[] = redditResult.topics.map(topic => ({
+        id: `topic_${uuidv4()}`,
+        title: topic.title,
+        summary: topic.oneLineSummary,
+        sourceType: 'reddit_search' as const,
+        sourceNodeId: redditSearchNode.id,
+        createdAt: new Date().toISOString(),
+        tags: topic.tags,
+        meta: {
+          redditLinks: topic.redditLinks,
+          insights: topic.mainInsights,
+          basedQuestions: topic.basedOnQuestions.map(qId => {
+            const question = redditResult.questions.find(q => q.id === qId);
+            return question?.question || '';
+          }).filter(Boolean)
+        }
+      }));
+
+      // 채널 노드의 topics 업데이트
+      const updatedChannelConfig = {
+        ...channelConfig,
+        topics: [...(channelConfig.topics || []), ...newTopics]
+      };
+
+      // 워크스페이스의 채널 노드 업데이트
+      updatedWorkspace = {
+        ...updatedWorkspace,
+        nodes: updatedWorkspace.nodes.map(node =>
+          node.id === channelNode.id
+            ? { ...node, data: { ...node.data, config: updatedChannelConfig } }
+            : node
+        )
+      };
+
+      // Reddit 서치 노드에 실행 결과 저장
+      const updatedRedditSearchConfig = {
+        ...redditSearchConfig,
+        lastExecutedAt: new Date().toISOString(),
+        searchResult: redditResult
+      };
+
+      updatedWorkspace = {
+        ...updatedWorkspace,
+        nodes: updatedWorkspace.nodes.map(node =>
+          node.id === redditSearchNode.id
+            ? { ...node, data: { ...node.data, config: updatedRedditSearchConfig } }
+            : node
+        )
+      };
+
+      results.push(redditResult);
+      executedPaths.push(pathInfo);
+
+      console.log(`✓ [${i + 1}/${redditSearchPaths.length}] Reddit 서치 완료: ${redditResult.topics.length}개 주제 생성됨`);
+
+      callbacks?.onPathComplete?.(pathInfo, redditResult, updatedWorkspace);
+
+      // 마지막 경로가 아니면 5초 대기
+      if (i < redditSearchPaths.length - 1) {
+        console.log('⏳ 5초 대기 중...\n');
+        await new Promise((resolve) => setTimeout(resolve, 5000));
+      }
+    } catch (error) {
+      console.error(`✗ Reddit 서치 실패:`, error);
+      throw error;
+    }
+  }
+
+  console.log(`\n=== Reddit 서치 실행 완료: ${results.length}개 경로 실행됨 ===\n`);
+
+  return { results, executedPaths, updatedWorkspace };
+}
+
+/**
+ * 서치 실행 함수
+ * Input → Channel → Search → Content 경로를 실행하여 검색 결과를 Content 노드에 저장
+ */
+export async function executeSearch(
+  workspace: Workspace,
+  callbacks?: {
+    onPathStart?: (path: { inputNodeId: string; channelNodeId: string; searchNodeId: string; contentNodeId: string }) => void;
+    onPathComplete?: (path: { inputNodeId: string; channelNodeId: string; searchNodeId: string; contentNodeId: string }, result: any, updatedWorkspace: Workspace) => void;
+  }
+): Promise<{ results: any[]; executedPaths: Array<{ inputNodeId: string; channelNodeId: string; searchNodeId: string; contentNodeId: string }>; updatedWorkspace: Workspace }> {
+  console.log(`\n=== 서치 실행 시작 ===`);
+
+  // 1. 서치 실행 경로 찾기
+  const searchPaths = findSearchExecutionPaths(workspace);
+
+  if (searchPaths.length === 0) {
+    console.log('서치 실행 가능한 경로가 없습니다. (Input → Channel → Search → Content)');
+    return { results: [], executedPaths: [], updatedWorkspace: workspace };
+  }
+
+  console.log(`발견된 서치 경로: ${searchPaths.length}개`);
+
+  const results: any[] = [];
+  const executedPaths: Array<{ inputNodeId: string; channelNodeId: string; searchNodeId: string; contentNodeId: string }> = [];
+  let updatedWorkspace = { ...workspace };
+
+  // 2. 각 경로 실행
+  for (let i = 0; i < searchPaths.length; i++) {
+    const path = searchPaths[i];
+    const { inputNode, channelNode, searchNode, contentNode } = path;
+
+    const pathInfo = {
+      inputNodeId: inputNode.id,
+      channelNodeId: channelNode.id,
+      searchNodeId: searchNode.id,
+      contentNodeId: contentNode.id
+    };
+
+    try {
+      console.log(
+        `[${i + 1}/${searchPaths.length}] 서치 중: ${inputNode.data.label} → ${channelNode.data.label} → ${searchNode.data.label} → ${contentNode.data.label}`
+      );
+
+      callbacks?.onPathStart?.(pathInfo);
+
+      const inputConfig = inputNode.data.config;
+      const channelConfig = channelNode.data.config;
+      const searchConfig = searchNode.data.config;
+
+      // 여기서 실제 서치 API 호출 (기존 /api/search/execute 로직 참조)
+      console.log('   🔍 실제 서치 실행 중...');
+
+      // 서치 API 호출 (기존 로직과 동일)
+      const searchResponse = await fetch('http://localhost:3000/api/search/execute', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          workspaceId: workspace.id,
+          searchNodeId: searchNode.id,
+        }),
+      });
+
+      if (!searchResponse.ok) {
+        throw new Error(`서치 API 오류: ${searchResponse.status} ${searchResponse.statusText}`);
+      }
+
+      const searchResult = await searchResponse.json();
+
+      // Content 노드에 검색 결과 저장
+      const updatedContentConfig = {
+        ...contentNode.data.config,
+        searchResults: searchResult.searchResults || [],
+        lastUpdatedAt: new Date().toISOString()
+      };
+
+      // 서치 노드에 실행 결과 저장
+      const updatedSearchConfig = {
+        ...searchConfig,
+        lastExecutedAt: new Date().toISOString(),
+        searchNodeResult: searchResult.searchNodeResult
+      };
+
+      // 워크스페이스 업데이트
+      updatedWorkspace = {
+        ...updatedWorkspace,
+        nodes: updatedWorkspace.nodes.map(node =>
+          node.id === contentNode.id
+            ? { ...node, data: { ...node.data, config: updatedContentConfig } }
+            : node.id === searchNode.id
+            ? { ...node, data: { ...node.data, config: updatedSearchConfig } }
+            : node
+        )
+      };
+
+      results.push(searchResult);
+      executedPaths.push(pathInfo);
+
+      console.log(`✓ [${i + 1}/${searchPaths.length}] 서치 완료: 검색 결과가 Content 노드에 저장됨`);
+
+      callbacks?.onPathComplete?.(pathInfo, searchResult, updatedWorkspace);
+
+      // 마지막 경로가 아니면 5초 대기
+      if (i < searchPaths.length - 1) {
+        console.log('⏳ 5초 대기 중...\n');
+        await new Promise((resolve) => setTimeout(resolve, 5000));
+      }
+    } catch (error) {
+      console.error(`✗ 서치 실패:`, error);
+      throw error;
+    }
+  }
+
+  console.log(`\n=== 서치 실행 완료: ${results.length}개 경로 실행됨 ===\n`);
+
+  return { results, executedPaths, updatedWorkspace };
+}
+
+/**
+ * 통합 플로우 실행 함수
+ * 워크스페이스의 모든 경로 유형을 감지하고 실행
+ */
+// Export path finding functions for debugging
+export {
+  findExecutionPaths,
+  findSearchExecutionPaths,
+  findRedditSearchExecutionPaths,
+};
+
+export async function executeUnifiedFlow(
+  workspace: Workspace,
+  callbacks?: {
+    onPathStart?: (pathType: string, pathInfo: any) => void;
+    onPathComplete?: (pathType: string, pathInfo: any, result: any, updatedWorkspace: Workspace) => void;
+  }
+): Promise<{
+  contentResults: GeneratedContent[];
+  searchResults: any[];
+  redditSearchResults: RedditSearchResult[];
+  executedPaths: Array<{ type: string; pathInfo: any }>;
+  updatedWorkspace: Workspace;
+}> {
+  console.log(`\n=== 통합 플로우 실행 시작 ===`);
+
+  const contentResults: GeneratedContent[] = [];
+  const searchResults: any[] = [];
+  const redditSearchResults: RedditSearchResult[] = [];
+  const executedPaths: Array<{ type: string; pathInfo: any }> = [];
+  let updatedWorkspace = { ...workspace };
+
+  try {
+    // 1. 일반 콘텐츠 생성 경로 실행 (Input → Channel → ContentFormat)
+    console.log('\n📝 일반 콘텐츠 생성 경로 확인...');
+    const contentPaths = findExecutionPaths(workspace);
+    if (contentPaths.length > 0) {
+      console.log(`일반 콘텐츠 경로 ${contentPaths.length}개 발견, 실행 중...`);
+      const contentExecution = await executeFlow(workspace, {
+        onPathStart: (path) => callbacks?.onPathStart?.('content', path),
+        onPathComplete: (path, result) => {
+          executedPaths.push({ type: 'content', pathInfo: path });
+          callbacks?.onPathComplete?.('content', path, result, updatedWorkspace);
+        }
+      });
+      contentResults.push(...contentExecution.results);
+      updatedWorkspace = workspace; // executeFlow은 워크스페이스를 직접 수정하지 않음
+    }
+
+    // 2. 서치 경로 실행 (Input → Channel → Search → Content)
+    console.log('\n🔍 서치 경로 확인...');
+    const searchPaths = findSearchExecutionPaths(updatedWorkspace);
+    if (searchPaths.length > 0) {
+      console.log(`서치 경로 ${searchPaths.length}개 발견, 실행 중...`);
+      const searchExecution = await executeSearch(updatedWorkspace, {
+        onPathStart: (path) => callbacks?.onPathStart?.('search', path),
+        onPathComplete: (path, result, newWorkspace) => {
+          executedPaths.push({ type: 'search', pathInfo: path });
+          callbacks?.onPathComplete?.('search', path, result, newWorkspace);
+        }
+      });
+      searchResults.push(...searchExecution.results);
+      executedPaths.push(...searchExecution.executedPaths.map(pathInfo => ({ type: 'search', pathInfo })));
+      updatedWorkspace = searchExecution.updatedWorkspace;
+    }
+
+    // 3. Reddit 서치 경로 실행 (Input → RedditSearch → Channel)
+    console.log('\n🔄 Reddit 서치 경로 확인...');
+    const redditSearchPaths = findRedditSearchExecutionPaths(updatedWorkspace);
+    if (redditSearchPaths.length > 0) {
+      console.log(`Reddit 서치 경로 ${redditSearchPaths.length}개 발견, 실행 중...`);
+      const redditSearchExecution = await executeRedditSearch(updatedWorkspace, {
+        onPathStart: (path) => callbacks?.onPathStart?.('reddit_search', path),
+        onPathComplete: (path, result, newWorkspace) => {
+          executedPaths.push({ type: 'reddit_search', pathInfo: path });
+          callbacks?.onPathComplete?.('reddit_search', path, result, newWorkspace);
+        }
+      });
+      redditSearchResults.push(...redditSearchExecution.results);
+      executedPaths.push(...redditSearchExecution.executedPaths.map(pathInfo => ({ type: 'reddit_search', pathInfo })));
+      updatedWorkspace = redditSearchExecution.updatedWorkspace;
+    }
+
+    console.log(`\n=== 통합 플로우 실행 완료 ===`);
+    console.log(`- 콘텐츠 생성: ${contentResults.length}개`);
+    console.log(`- 서치 실행: ${searchResults.length}개`);
+    console.log(`- Reddit 서치: ${redditSearchResults.length}개`);
+    console.log(`- 총 실행 경로: ${executedPaths.length}개\n`);
+
+    return {
+      contentResults,
+      searchResults,
+      redditSearchResults,
+      executedPaths,
+      updatedWorkspace
+    };
+  } catch (error) {
+    console.error('통합 플로우 실행 중 오류:', error);
+    throw error;
+  }
 }

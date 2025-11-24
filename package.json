@@ -17,6 +17,8 @@
     "@anthropic-ai/sdk": "^0.32.1",
     "@google/generative-ai": "^0.24.1",
     "@types/multer": "^2.0.0",
+    "@slack/events-api": "^3.0.1",
+    "@slack/web-api": "^7.12.0",
     "cors": "^2.8.5",
     "dotenv": "^17.2.3",
     "express": "^4.18.2",

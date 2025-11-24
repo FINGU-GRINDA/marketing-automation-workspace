@@ -31,8 +31,25 @@ npm install
 
 ### 2. 환경 변수 설정 (선택사항)
 
+`.env` 파일을 생성하고 다음 환경 변수를 설정하세요:
+
 ```bash
-cp .env.example .env
+# Anthropic Claude API (필수)
+ANTHROPIC_API_KEY=sk-ant-api03-...
+
+# OpenAI API (선택, DALL-E 이미지 생성용)
+OPENAI_API_KEY=sk-...
+
+# Gamma API (선택, 소셜 포스트 생성용)
+GAMMA_API_KEY=your_gamma_key
+
+# Slack 연동 (선택)
+SLACK_SIGNING_SECRET=your_slack_signing_secret
+SLACK_WEBHOOK_URL=http://o8s48sssog8gkgwcgw00ccco.107.150.31.159.sslip.io/
+SLACK_TARGET_WORKSPACE_ID=default-workspace
+
+# 서버 포트 (선택, 기본값: 3000)
+PORT=3000
 ```
 
 `.env` 파일에서 `ANTHROPIC_API_KEY`를 설정하세요.
@@ -40,12 +57,39 @@ cp .env.example .env
 
 ### 3. 개발 서버 실행
 
+#### NVM 사용 시 (macOS)
+
+```bash
+# NVM 로드
+export NVM_DIR="$HOME/.nvm"
+[ -s "/opt/homebrew/opt/nvm/nvm.sh" ] && \. "/opt/homebrew/opt/nvm/nvm.sh"
+
+# 서버 시작
+npm run dev
+```
+
+또는 스크립트 사용:
+
+```bash
+./run-dev.sh
+```
+
+#### 일반 실행
+
 ```bash
 npm run dev
 ```
 
 - Frontend: http://localhost:5173
 - Backend: http://localhost:3000
+
+서버 시작 시 다음 로그가 보여야 합니다:
+
+```bash
+🚀 Server running on http://localhost:3000
+💡 LLM: REAL (Claude Haiku), Image: REAL (DALL-E)
+📨 Slack 연동 활성화 (타겟 워크스페이스: default-workspace)
+```
 
 ## 사용 방법
 
@@ -96,7 +140,7 @@ Input Node → Channel Node → Content Format Node
 
 ## 프로젝트 구조
 
-```
+```bash
 marketing_1/
 ├── src/
 │   ├── server/              # 백엔드
@@ -136,8 +180,53 @@ marketing_1/
 ### POST /api/workspaces/:id/run
 플로우 실행 (콘텐츠 생성)
 
+## Slack 연동
+
+### 설정 방법
+
+1. Slack App 생성 및 설정:
+   - https://api.slack.com/apps 에서 새 앱 생성
+   - Event Subscriptions 활성화
+   - Request URL: `https://your-domain.com/api/slack/events`
+   - Subscribe to bot events: 
+     - `message.channels` 추가 (공개 채널용)
+     - `message.groups` 추가 (비공개 채널용) ⚠️ **필수**
+   - OAuth & Permissions에서:
+     - `channels:history`, `channels:read` 추가 (공개 채널용)
+     - `groups:history`, `groups:read` 추가 (비공개 채널용) ⚠️ **필수**
+
+2. 환경 변수 설정:
+
+   ```bash
+   SLACK_SIGNING_SECRET=your_signing_secret
+   SLACK_WEBHOOK_URL=http://o8s48sssog8gkgwcgw00ccco.107.150.31.159.sslip.io/
+   SLACK_TARGET_WORKSPACE_ID=default-workspace  # 자동 업데이트할 워크스페이스 ID (선택, 기본값: default-workspace)
+   ```
+
+3. 타겟 채널:
+   - 기본값: `C09TF21SBB4` (비공개 채널: `threads-ai-automation`)
+   - `src/server/routes/slack.ts`에서 `SLACK_CHANNEL_ID` 변경 가능
+   - **비공개 채널 사용 시**: Bot을 채널에 초대해야 함 (`/invite @YourBotName`)
+
+### 사용 방법
+
+#### 자동 모드 (기본)
+
+1. Slack 채널 `C09TF21SBB4`에 메시지 전송
+2. **자동으로** 기본 워크스페이스의 첫 번째 Input Node가 업데이트됨
+3. Input Node의 `title`, `topic`, `rawData`가 자동으로 채워짐
+
+#### 수동 모드 (선택)
+
+1. Input Node 폼에서 "📋 Slack 메시지에서 가져오기" 버튼 클릭
+2. 최근 Slack 메시지 목록에서 선택
+3. 선택한 메시지가 자동으로 Input Node의 데이터로 채워짐
+
+> **참고**: 자동 업데이트는 `SLACK_TARGET_WORKSPACE_ID` 환경 변수로 지정된 워크스페이스의 첫 번째 Input Node에 적용됩니다.
+
 ## 확장 계획
 
+- [x] Slack 연동 (메시지 수신 및 Input Node 연동)
 - [ ] SQLite + Prisma 영속성 추가
 - [ ] 여러 워크스페이스 지원
 - [ ] 실시간 실행 진행률 표시

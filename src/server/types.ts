@@ -297,3 +297,18 @@ export interface RunFlowResponse {
   skippedPaths?: ExecutedPath[];   // AI가 거부한 경로들
   error?: string;
 }
+
+// Slack 메시지 타입
+export interface SlackMessage {
+  id: string;
+  channelId: string;
+  channelName: string;
+  text: string;
+  userId: string;
+  userName: string;
+  timestamp: string;
+  threadTs?: string; // 스레드 메시지인 경우
+  createdAt: string; // 저장 시각
+  forwarded?: boolean; // 웹훅으로 전송되었는지 여부
+  forwardedAt?: string; // 전송 시각
+}

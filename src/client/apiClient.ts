@@ -93,4 +93,19 @@ export const api = {
     }
     return res.json();
   },
+
+  // Slack 메시지 목록 조회
+  async getSlackMessages(limit?: number): Promise<{ success: boolean; messages: any[]; count: number }> {
+    const url = limit ? `${API_BASE}/slack/messages?limit=${limit}` : `${API_BASE}/slack/messages`;
+    const res = await fetch(url);
+    if (!res.ok) throw new Error('Failed to fetch Slack messages');
+    return res.json();
+  },
+
+  // 특정 Slack 메시지 조회
+  async getSlackMessage(id: string): Promise<{ success: boolean; message: any }> {
+    const res = await fetch(`${API_BASE}/slack/messages/${id}`);
+    if (!res.ok) throw new Error('Failed to fetch Slack message');
+    return res.json();
+  },
 };

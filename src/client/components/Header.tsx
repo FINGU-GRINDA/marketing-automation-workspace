@@ -12,6 +12,7 @@ interface HeaderProps {
   onSave: () => void;
   onRun: () => void;
   isRunning: boolean;
+  onSearchExecute?: () => void;
 }
 
 function Header({
@@ -25,6 +26,7 @@ function Header({
   onSave,
   onRun,
   isRunning,
+  onSearchExecute,
 }: HeaderProps) {
   const [isEditingName, setIsEditingName] = useState(false);
   const [editedName, setEditedName] = useState(workspaceName);
@@ -170,6 +172,15 @@ function Header({
           >
             💾 저장
           </button>
+          {onSearchExecute && (
+            <button
+              onClick={onSearchExecute}
+              className="px-4 py-2 bg-red-500 text-white rounded-lg hover:bg-red-600 transition-colors font-medium"
+              title="체크된 서치 노드들을 순차적으로 실행합니다"
+            >
+              🔍 서치 실행
+            </button>
+          )}
           <button
             onClick={onRun}
             disabled={isRunning}

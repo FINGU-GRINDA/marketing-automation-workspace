@@ -3,14 +3,13 @@ import { v4 as uuidv4 } from 'uuid';
 import type {
   SearchNodeConfig,
   SearchQuestion,
-  SearchThreadSummary,
   SearchInsight,
   SearchTopicCandidate,
   SearchNodeResult,
   InputNodeConfig,
   ChannelNodeConfig
 } from '../types';
-import { searchMultiplePlatforms, summarizeTopComments } from '../searchClient.js';
+import { searchMultiplePlatforms } from '../searchClient';
 
 const router = express.Router();
 
@@ -201,7 +200,7 @@ async function addSearchResultToContentNode(
     }
 
     // 서치 결과를 contentBlocks 형식으로 변환하여 추가
-    const newContentBlocks = searchResult.topicCandidates.map((topic, idx) => ({
+    const newContentBlocks = searchResult.topicCandidates.map((topic, _) => ({
       id: `block_${searchNodeId}_${topic.id}`,
       subject: topic.title,
       content: topic.body || topic.oneLineSummary,
@@ -458,7 +457,7 @@ ${inputTopic}
       throw new Error(`OpenAI API 오류: ${response.status} ${response.statusText} - ${errorText}`);
     }
 
-    const data = await response.json();
+    const data = await response.json() as any;
     const content = data.choices[0].message.content;
 
     const jsonMatch = content.match(/```json\s*([\s\S]*?)\s*```/);
@@ -506,9 +505,9 @@ async function performRealSearch(
         const threads = searchResults.flatMap(result =>
           (result.threads || []).map(thread => {
             const content = thread.content || thread.title || '내용 없음';
-            const topComments = thread.topComments || [];
-            const topCommentText = topComments.length > 0
-              ? topComments.slice(0, 2).join(' | ')
+            const top_comments = thread.top_comments || [];
+            const topCommentText = top_comments.length > 0
+              ? top_comments.slice(0, 2).join(' | ')
               : content.substring(0, 80);
 
             return {
@@ -689,7 +688,7 @@ ${channelConfig.channelType === 'linkedin' ? `
       throw new Error(`OpenAI API 오류: ${response.status} ${response.statusText} - ${errorText}`);
     }
 
-    const data = await response.json();
+    const data = await response.json() as any;
     const content = data.choices[0].message.content;
 
     const jsonMatch = content.match(/```json\s*([\s\S]*?)\s*```/);

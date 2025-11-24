@@ -1,6 +1,68 @@
 import { useState } from 'react';
 import type { GeneratedContent, Workspace } from '../types';
 
+// 번역 콘텐츠 표시 컴포넌트
+function TranslationContentDisplay({ content }: { content: GeneratedContent }) {
+  const [activeTab, setActiveTab] = useState<'translated' | 'original'>('translated');
+
+  if (!content.isTranslated || !content.originalText) {
+    // 번역되지 않은 경우: 번역본만 표시
+    return (
+      <div className="text-sm text-gray-700 whitespace-pre-wrap max-h-96 overflow-y-auto">
+        {content.finalText}
+      </div>
+    );
+  }
+
+  // 번역된 경우: 탭으로 원본과 번역본 표시
+  return (
+    <div>
+      {/* 탭 헤더 */}
+      <div className="flex border-b border-gray-200 mb-3">
+        <button
+          onClick={() => setActiveTab('translated')}
+          className={`px-3 py-2 text-sm font-medium border-b-2 transition-colors ${
+            activeTab === 'translated'
+              ? 'border-blue-500 text-blue-600'
+              : 'border-transparent text-gray-500 hover:text-gray-700'
+          }`}
+        >
+          🇰🇷 한국어 번역본
+        </button>
+        <button
+          onClick={() => setActiveTab('original')}
+          className={`px-3 py-2 text-sm font-medium border-b-2 transition-colors ${
+            activeTab === 'original'
+              ? 'border-blue-500 text-blue-600'
+              : 'border-transparent text-gray-500 hover:text-gray-700'
+          }`}
+        >
+          🌐 {content.detectedLanguage} 원본
+        </button>
+      </div>
+
+      {/* 탭 내용 */}
+      <div className="text-sm text-gray-700 whitespace-pre-wrap max-h-96 overflow-y-auto">
+        {activeTab === 'translated' ? (
+          <div>
+            <div className="text-xs text-green-600 font-medium mb-2">✅ 번역된 결과</div>
+            {content.finalText}
+          </div>
+        ) : (
+          <div>
+            <div className="text-xs text-gray-500 font-medium mb-2">
+              📝 원본 ({content.detectedLanguage})
+            </div>
+            <div className="text-gray-600 italic">
+              {content.originalText}
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 interface RightPanelProps {
   generatedContents: GeneratedContent[];
   workspace: Workspace;
@@ -34,6 +96,18 @@ function RightPanel({ generatedContents, workspace, onDeleteContent, onRegenerat
   const copyToClipboard = (text: string) => {
     navigator.clipboard.writeText(text);
     alert('클립보드에 복사되었습니다!');
+  };
+
+  // 번여 상태에 따른 뱃지 표시
+  const getTranslationBadge = (content: GeneratedContent) => {
+    if (content.isTranslated && content.originalText) {
+      return (
+        <span className="text-xs bg-green-100 text-green-700 px-2 py-0.5 rounded">
+          🌐 {content.detectedLanguage} → 한국어
+        </span>
+      );
+    }
+    return null;
   };
 
   // 토글: 이미 선택된 항목을 다시 클릭하면 접기
@@ -119,7 +193,7 @@ function RightPanel({ generatedContents, workspace, onDeleteContent, onRegenerat
                 <div>
                   <div className="flex items-start justify-between mb-1">
                     <div className="flex-1">
-                      <div className="flex items-center gap-2">
+                      <div className="flex items-center gap-2 flex-wrap">
                         <div className="text-sm font-medium text-gray-900">
                           {getNodeName(content.contentFormatNodeId)}
                         </div>
@@ -128,6 +202,7 @@ function RightPanel({ generatedContents, workspace, onDeleteContent, onRegenerat
                             🖼️ 이미지
                           </span>
                         )}
+                        {getTranslationBadge(content)}
                       </div>
                       <div className="text-xs text-gray-500">
                         {getChannelInfo(content.channelNodeId)}
@@ -199,9 +274,9 @@ function RightPanel({ generatedContents, workspace, onDeleteContent, onRegenerat
             )}
 
             {/* 텍스트 내용 표시 */}
-            <div className="text-sm text-gray-700 whitespace-pre-wrap max-h-96 overflow-y-auto">
-              {selectedContent.finalText}
-            </div>
+            {selectedContent.contentType === 'text' && (
+              <TranslationContentDisplay content={selectedContent} />
+            )}
           </div>
         )}
       </div>

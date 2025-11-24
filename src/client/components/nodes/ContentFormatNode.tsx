@@ -1,22 +1,32 @@
-import { useContext } from 'react';
+import { memo, useContext } from 'react';
 import { Handle, Position } from 'reactflow';
 import { NodeActionsContext } from '../Canvas';
 
 function ContentFormatNode({ data, id, selected, style }: any) {
   const nodeActions = useContext(NodeActionsContext);
-  const isSelected = data.selected || false;
+  const isSelected = data.selected ?? false; // undefined 처리를 위해 ?? 사용
 
+  
   const handleDuplicate = (position: 'top' | 'bottom', e: React.MouseEvent) => {
     e.stopPropagation();
     if (nodeActions) {
       nodeActions.duplicateNode(id, position);
+    } else {
+      console.log('🟣 nodeActions is null!');
     }
   };
 
   const handleCheckboxChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     e.stopPropagation();
+    console.log('🟣 Checkbox clicked for node:', data.label, 'current selected:', isSelected);
+    console.log('🟣 checkbox checked value:', e.target.checked);
+    console.log('🟣 nodeActions exists:', !!nodeActions);
+
     if (nodeActions) {
+      console.log('🟣 Calling toggleFormatSelection...');
       nodeActions.toggleFormatSelection(id);
+    } else {
+      console.error('🟣 ERROR: nodeActions context is not available!');
     }
   };
 
@@ -35,13 +45,20 @@ function ContentFormatNode({ data, id, selected, style }: any) {
         <Handle type="target" position={Position.Left} />
 
         <div className="flex items-center gap-2 w-full">
-          <input
-            type="checkbox"
-            checked={isSelected}
-            onChange={handleCheckboxChange}
-            className="w-3 h-3 text-purple-600 rounded focus:ring-purple-500 flex-shrink-0"
+          <div
+            className="relative"
             onClick={(e) => e.stopPropagation()}
-          />
+            onMouseDown={(e) => e.stopPropagation()}
+          >
+            <input
+              type="checkbox"
+              checked={isSelected}
+              onChange={handleCheckboxChange}
+              onClick={(e) => e.stopPropagation()}
+              onMouseDown={(e) => e.stopPropagation()}
+              className="w-3 h-3 text-purple-600 rounded focus:ring-purple-500 flex-shrink-0 cursor-pointer relative z-10"
+            />
+          </div>
           <div className="flex-1 min-w-0">
             <div className="font-semibold text-purple-900 text-xs leading-tight truncate">{data.label}</div>
             <div className="text-xs text-purple-600 truncate">
@@ -62,4 +79,4 @@ function ContentFormatNode({ data, id, selected, style }: any) {
   );
 }
 
-export default ContentFormatNode;
+export default memo(ContentFormatNode);

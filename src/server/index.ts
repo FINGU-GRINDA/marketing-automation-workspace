@@ -5,6 +5,8 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import workspacesRouter from './routes/workspaces.js';
 import formatRouter from './routes/format.js';
+import searchRouter from './routes/search.js';
+import contentRouter from './routes/content.js';
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -26,6 +28,8 @@ app.use((req, _res, next) => {
 // API 라우트
 app.use('/api/workspaces', workspacesRouter);
 app.use('/api/format', formatRouter);
+app.use('/api/search', searchRouter);
+app.use('/api/content', contentRouter);
 
 // 헬스체크
 app.get('/api/health', (_req, res) => {

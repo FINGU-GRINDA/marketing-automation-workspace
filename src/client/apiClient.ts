@@ -70,14 +70,22 @@ export const api = {
   async generateFormatFromReference(data: {
     channelId: string;
     channelType: string;
-    referenceText: string;
+    textReference: string;
+    articleReferences: string[];
     targetLanguage: string;
     workspaceId: string; // workspaceId 추가
   }): Promise<{ success: boolean; data: any; error?: string }> {
     const res = await fetch(`${API_BASE}/format/from-reference`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(data),
+      body: JSON.stringify({
+        channelId: data.channelId,
+        channelType: data.channelType,
+        textReference: data.textReference,
+        articleReferences: data.articleReferences,
+        targetLanguage: data.targetLanguage,
+        workspaceId: data.workspaceId
+      }),
     });
     if (!res.ok) {
       const errorData = await res.json().catch(() => ({}));

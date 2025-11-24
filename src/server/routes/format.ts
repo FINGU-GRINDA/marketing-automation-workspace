@@ -8,24 +8,49 @@ const router = express.Router();
 
 /**
  * POST /api/format/from-reference
- * 레퍼런스 텍스트를 기반으로 AI가 포맷을 자동 생성
+ * 레퍼런스(텍스트, 글 첨부)를 기반으로 AI가 포맷을 자동 생성
  */
 router.post('/from-reference', async (req, res) => {
   try {
-    const { channelId, channelType, referenceText, targetLanguage = 'ko', workspaceId } = req.body;
+    const { channelId, channelType, textReference, articleReferences, targetLanguage = 'ko', workspaceId } = req.body;
 
     // 필수 파라미터 검증
-    if (!channelId || !channelType || !referenceText || !workspaceId) {
+    if (!channelId || !channelType || !workspaceId) {
       return res.status(400).json({
         success: false,
-        error: 'channelId, channelType, referenceText, workspaceId는 필수 항목입니다.'
+        error: 'channelId, channelType, workspaceId는 필수 항목입니다.'
+      });
+    }
+
+    // 최소 하나의 레퍼런스가 필요
+    const hasAnyReference = (textReference && textReference.trim()) ||
+                          (articleReferences && articleReferences.some((ref: string) => ref.trim()));
+
+    if (!hasAnyReference) {
+      return res.status(400).json({
+        success: false,
+        error: '텍스트 또는 글 첨부 중 최소 하나를 제공해주세요.'
       });
     }
 
     console.log(`\n=== AI 포맷 생성 요청: 채널 ${channelId} (${channelType}) ===`);
     console.log(`타겟 언어: ${targetLanguage}`);
-    console.log(`레퍼런스 텍스트 길이: ${referenceText.length}자`);
     console.log(`워크스페이스 ID: ${workspaceId}`);
+    console.log(`텍스트 레퍼런스: ${textReference ? textReference.length + '자' : '없음'}`);
+    console.log(`글 첨부 레퍼런스: ${articleReferences ? articleReferences.length + '개' : '없음'}`);
+
+    // 종합 레퍼런스 텍스트 생성
+    let combinedReferenceText = textReference || '';
+
+    // 글 첨부 내용 추가
+    if (articleReferences && articleReferences.length > 0) {
+      const validArticles = articleReferences.filter((ref: string) => ref.trim());
+      if (validArticles.length > 0) {
+        combinedReferenceText += combinedReferenceText ? '\n\n' : '';
+        combinedReferenceText += '=== 추가 글 레퍼런스 ===\n';
+        combinedReferenceText += validArticles.map((article: string, index: number) => `글 ${index + 1}:\n${article}`).join('\n\n');
+      }
+    }
 
     // OpenAI GPT-5.1로 포맷 생성 요청
     const prompt = `당신은 마케팅 콘텐츠 **포맷 분석 전담 어시스턴트**입니다.
@@ -34,7 +59,8 @@ router.post('/from-reference', async (req, res) => {
 입력 정보:
 - 채널 유형: ${channelType}
 - 타겟 언어: ${targetLanguage}
-- 레퍼런스 텍스트: ${referenceText}
+- 레퍼런스 텍스트: ${combinedReferenceText}
+- 제공된 레퍼런스: 텍스트 ${textReference ? '있음' : '없음'}, 글 첨부 ${articleReferences ? articleReferences.length + '개' : '없음'}
 
 분석과 출력에 대한 기본 원칙:
 

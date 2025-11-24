@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState, useRef, forwardRef, useImperativeHandle, createContext } from 'react';
+import { useCallback, useEffect, useState, useRef, forwardRef, useImperativeHandle, createContext, useMemo } from 'react';
 import ReactFlow, {
   Background,
   Controls,
@@ -15,25 +15,23 @@ import ReactFlow, {
 } from 'reactflow';
 import 'reactflow/dist/style.css';
 import { v4 as uuidv4 } from 'uuid';
-import type { Workspace, Node as CustomNode, InputNodeConfig, ChannelNodeConfig, ContentFormatNodeConfig, ExecutedPath, ClipboardData, ClipboardNodeData, ClipboardEdgeData } from '../types';
+import type { Workspace, Node as CustomNode, InputNodeConfig, ChannelNodeConfig, ContentFormatNodeConfig, SearchNodeConfig, ContentNodeConfig, ExecutedPath, ClipboardData, ClipboardNodeData, ClipboardEdgeData } from '../types';
 import InputNode from './nodes/InputNode';
 import ChannelNode from './nodes/ChannelNode';
 import ContentFormatNode from './nodes/ContentFormatNode';
+import ContentNode from './nodes/ContentNode';
 import CanvasBoxNode from './nodes/CanvasBoxNode';
+import SearchNode, { SearchSelectionContext } from './nodes/SearchNode';
 import CustomEdge from './edges/CustomEdge';
 
-// Context for node actions (duplicate, etc.)
+// Context for node actions (duplicate, add next node, etc.)
 export const NodeActionsContext = createContext<{
   duplicateNode: (nodeId: string, position: 'top' | 'bottom') => void;
   toggleFormatSelection: (nodeId: string) => void;
+  addNextNode: (nodeId: string, nodeType: string) => void;
 } | null>(null);
 
-const nodeTypes: NodeTypes = {
-  input: InputNode,
-  channel: ChannelNode,
-  content_format: ContentFormatNode,
-  canvas_box: CanvasBoxNode,
-};
+
 
 const edgeTypes: EdgeTypes = {
   custom: CustomEdge,
@@ -41,6 +39,7 @@ const edgeTypes: EdgeTypes = {
 
 export interface CanvasHandle {
   autoLayout: () => void;
+  executeCheckedSearchNodes: () => void;
 }
 
 interface CanvasProps {
@@ -52,20 +51,29 @@ interface CanvasProps {
   skippedPaths?: ExecutedPath[];
 }
 
-const CanvasInner = forwardRef<CanvasHandle, CanvasProps>(
-  function CanvasInner(
-    { workspace, setWorkspace, selectedNode, setSelectedNode, executedPaths = [], skippedPaths = [] },
-    ref
-  ) {
+function CanvasInnerFunction(props: any, ref: any) {
+  const { workspace, setWorkspace, selectedNode, setSelectedNode, executedPaths = [], skippedPaths = [] } = props;
+
+  // workspaceId를 전역적으로 설정 (ContentNode에서 API 호출 시 사용)
+  useEffect(() => {
+    (window as any).currentWorkspaceId = workspace.id;
+    return () => {
+      // 컴포넌트 언마운트 시 정리
+      (window as any).currentWorkspaceId = null;
+    };
+  }, [workspace.id]);
     const [nodes, setNodes, onNodesChange] = useNodesState(workspace.nodes);
     const [edges, setEdges, onEdgesChangeBase] = useEdgesState(workspace.edges);
     const [copiedNode, setCopiedNode] = useState<CustomNode | null>(null);
     const [copiedMultiNodes, setCopiedMultiNodes] = useState<CustomNode[] | null>(null);
     const [copiedMultiEdges, setCopiedMultiEdges] = useState<any[] | null>(null);
+    const [selectedSearchNodes, setSelectedSearchNodes] = useState<Set<string>>(new Set());
+    const [executingSearchNodes, setExecutingSearchNodes] = useState<Set<string>>(new Set()); // 서치 실행 상태 추적
     const reactFlowWrapper = useRef<HTMLDivElement>(null);
     const { setViewport, getViewport } = useReactFlow();
     const workspaceRef = useRef(workspace);
 
+    
     // 엣지 변경 핸들러 (useEffect가 자동 동기화를 처리하므로 단순화)
     const onEdgesChange = useCallback(
       (changes: any[]) => {
@@ -141,6 +149,22 @@ const CanvasInner = forwardRef<CanvasHandle, CanvasProps>(
     },
     [setEdges]
   );
+
+  // 모든 엣지가 onDelete 함수를 갖도록 업데이트
+  useEffect(() => {
+    setEdges((currentEdges) => {
+      return currentEdges.map((edge) => {
+        if (!edge.data || !edge.data.onDelete) {
+          return {
+            ...edge,
+            type: 'custom',
+            data: { onDelete: handleEdgeDelete },
+          };
+        }
+        return edge;
+      });
+    });
+  }, [setEdges, handleEdgeDelete]);
 
   // workspace 변경 감지 및 동기화 (외부 변경만 반영)
   const prevWorkspaceIdRef = useRef(workspace.id);
@@ -284,6 +308,63 @@ const CanvasInner = forwardRef<CanvasHandle, CanvasProps>(
       })
     );
   }, [executedPaths, setEdges]);
+
+  // 서치 노드 실행 중 엣지 애니메이션 표시
+  useEffect(() => {
+    if (executingSearchNodes.size === 0) {
+      // 실행 중인 서치 노드가 없으면 엣지 스타일 업데이트 하지 않음 (executedPaths가 처리)
+      return;
+    }
+
+    // 실행 중인 서치 노드와 관련된 엣지 찾기
+    const currentWorkspace = workspaceRef.current;
+    const executingEdgeIds = new Set<string>();
+
+    executingSearchNodes.forEach((searchNodeId) => {
+      // 서치 노드와 연결된 엣지 찾기
+      const searchNode = currentWorkspace.nodes.find((n) => n.id === searchNodeId && n.type === 'search');
+      if (searchNode) {
+        // 입력 → 채널 → 서치 경로의 엣지 ID들 찾기
+        const channelToSearchEdges = currentWorkspace.edges.filter((e) => e.target === searchNodeId);
+        channelToSearchEdges.forEach((edge) => {
+          executingEdgeIds.add(edge.id); // 채널 → 서치 엣지
+
+          // 채널로 들어오는 엣지 찾기 (입력 → 채널)
+          const channelNodeId = edge.source;
+          const inputToChannelEdges = currentWorkspace.edges.filter((e) => e.target === channelNodeId);
+          inputToChannelEdges.forEach((inputEdge) => {
+            executingEdgeIds.add(inputEdge.id); // 입력 → 채널 엣지
+          });
+        });
+
+        // 서치 → 콘텐츠 엣지 찾기
+        const searchToContentEdges = currentWorkspace.edges.filter((e) => e.source === searchNodeId);
+        searchToContentEdges.forEach((edge) => {
+          executingEdgeIds.add(edge.id); // 서치 → 콘텐츠 엣지
+        });
+      }
+    });
+
+    // 엣지 스타일 업데이트 (서치 실행 중: 오렌지 점선)
+    setEdges((eds) =>
+      eds.map((edge) => {
+        if (executingEdgeIds.has(edge.id)) {
+          return {
+            ...edge,
+            style: {
+              ...edge.style,
+              stroke: '#f97316', // orange-500 (서치 실행 중)
+              strokeWidth: 3,
+              strokeDasharray: '5, 5', // 점선
+            },
+            animated: true,
+          };
+        }
+        // 실행 중이 아닌 엣지는 그대로 둠
+        return edge;
+      })
+    );
+  }, [executingSearchNodes, setEdges]);
 
   // Shift + 휠로 좌우 이동
   useEffect(() => {
@@ -530,6 +611,41 @@ const CanvasInner = forwardRef<CanvasHandle, CanvasProps>(
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [nodes, selectedNode, copiedNode, copiedMultiNodes, copiedMultiEdges, setNodes, setEdges, setSelectedNode]);
 
+  // 초기 데이터 마이그레이션: content_format 노드에 selected 속성 추가
+  useEffect(() => {
+    const needsMigration = workspace.nodes.some(node =>
+      node.type === 'content_format' && node.data.selected === undefined
+    );
+
+    if (needsMigration) {
+      console.log('🟣 Migrating content_format nodes to add selected property');
+
+      const migratedNodes = workspace.nodes.map(node => {
+        if (node.type === 'content_format' && node.data.selected === undefined) {
+          console.log('🟣 Adding selected=false to node:', node.data.label);
+          return {
+            ...node,
+            data: {
+              ...node.data,
+              selected: false
+            }
+          };
+        }
+        return node;
+      });
+
+      // 내부 업데이트 플래그 설정
+      isInternalUpdateRef.current = true;
+
+      setWorkspace(prev => ({
+        ...prev,
+        nodes: migratedNodes
+      }));
+
+      setNodes(migratedNodes);
+    }
+  }, [workspace.nodes, setWorkspace, setNodes]);
+
   // 엣지 연결 (useEffect가 자동 동기화를 처리하므로 단순화)
   const onConnect = useCallback(
     (connection: Connection) => {
@@ -548,16 +664,24 @@ const CanvasInner = forwardRef<CanvasHandle, CanvasProps>(
   // 노드 선택
   const onNodeClick = useCallback(
     (_event: any, node: any) => {
+      console.log('🔥 onNodeClick called - node:', node);
+      console.log('🔥 onNodeClick - node.id:', node.id);
+      console.log('🔥 onNodeClick - node.type:', node.type);
+      console.log('🔥 onNodeClick - available nodes:', nodes.map(n => ({ id: n.id, type: n.type, label: n.data.label })));
+
       const customNode = nodes.find((n) => n.id === node.id) as CustomNode;
+      console.log('🔥 onNodeClick - found customNode:', customNode);
+      console.log('🔥 onNodeClick - setting selectedNode to:', customNode || null);
+
       setSelectedNode(customNode || null);
     },
     [nodes, setSelectedNode]
   );
 
   // 노드 추가 (툴바 버튼용)
-  const addNode = (type: 'input' | 'channel' | 'content_format') => {
+  const addNode = (type: 'input' | 'channel' | 'content_format' | 'search' | 'content') => {
     const id = uuidv4();
-    let config: InputNodeConfig | ChannelNodeConfig | ContentFormatNodeConfig;
+    let config: InputNodeConfig | ChannelNodeConfig | ContentFormatNodeConfig | SearchNodeConfig | ContentNodeConfig;
     let label = '';
 
     if (type === 'input') {
@@ -579,8 +703,37 @@ const CanvasInner = forwardRef<CanvasHandle, CanvasProps>(
         channelKnowledge: '',
         toneMannerExample: '',
         prohibitedTypes: [],
+        topics: [],
       };
       label = '채널';
+    } else if (type === 'search') {
+      config = {
+        kind: 'search',
+        query: '',
+        channels: ['reddit', 'twitter', 'linkedin'],
+        timeFilter: 'week',
+        sortFilter: 'hot',
+        maxResults: 20,
+        searchType: 'both',
+      };
+      label = '서치';
+    } else if (type === 'content') {
+      config = {
+        kind: 'content',
+        title: '새 콘텐츠',
+        body: '',
+        contentType: 'text',
+        status: 'draft',
+        tags: [],
+        metadata: {
+          wordCount: 0,
+          estimatedReadTime: 1,
+          priority: 'medium',
+        },
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      };
+      label = '콘텐츠';
     } else {
       config = {
         kind: 'content_format',
@@ -597,149 +750,294 @@ const CanvasInner = forwardRef<CanvasHandle, CanvasProps>(
       id,
       type,
       position: { x: 250, y: 250 },
-      data: { label, config },
+      data: {
+        label,
+        config,
+        selected: false, // 모든 노드에 기본 selected 속성 추가
+      },
     };
 
     setNodes((nds) => [...nds, newNode]);
   };
 
-  // 자동 정렬 (빗자루 버튼)
+  // 자동 정렬 (빗자루 버전) - 트리 구조 기반 수평 중앙정렬
   const autoLayout = useCallback(() => {
-    const COLUMN_WIDTH = 300; // 열 간격
+    const COLUMN_WIDTH = 280; // 열 간격
     const ROW_HEIGHT = 120; // 행 간격
     const START_X = 100; // 시작 X 위치
-    const NODE_HEIGHT = 72; // 노드 높이 (충돌 감지용)
+    const MARGIN = 60; // 노드 그룹 간 수직 마진
 
     // 노드를 타입별로 분류
     const inputNodes = nodes.filter((n) => n.type === 'input');
     const channelNodes = nodes.filter((n) => n.type === 'channel');
+    const searchNodes = nodes.filter((n) => n.type === 'search');
+    const contentNodes = nodes.filter((n) => n.type === 'content');
     const formatNodes = nodes.filter((n) => n.type === 'content_format');
 
     const updatedNodes: CustomNode[] = [];
     const nodePositions = new Map<string, { x: number; y: number }>();
+    const processedNodes = new Set<string>();
 
-    // 1. 각 입력 노드에 연결된 채널 노드들을 순서대로 수집
-    const channelsByInput = new Map<string, CustomNode[]>();
-    inputNodes.forEach((inputNode) => {
-      const connectedChannels = edges
-        .filter((e) => e.source === inputNode.id)
-        .map((e) => channelNodes.find((n) => n.id === e.target))
+    // 간단한 자식 찾기 함수
+    const getChildren = (nodeId: string, targetType: string): CustomNode[] => {
+      return edges
+        .filter((e) => e.source === nodeId)
+        .map((e) => {
+          if (targetType === 'channel') return channelNodes.find((n) => n.id === e.target);
+          if (targetType === 'search') return searchNodes.find((n) => n.id === e.target);
+          if (targetType === 'content') return contentNodes.find((n) => n.id === e.target);
+          if (targetType === 'format') return formatNodes.find((n) => n.id === e.target);
+          return null;
+        })
         .filter((n): n is CustomNode => n !== undefined);
-      channelsByInput.set(inputNode.id, connectedChannels);
-    });
-
-    // 2. 각 채널에 연결된 포맷 개수를 계산하여 필요한 수직 공간 계산
-    const getChannelHeight = (channelId: string): number => {
-      const connectedFormats = edges
-        .filter((e) => e.source === channelId)
-        .map((e) => formatNodes.find((n) => n.id === e.target))
-        .filter((n): n is CustomNode => n !== undefined);
-
-      if (connectedFormats.length === 0) return ROW_HEIGHT;
-      return Math.max(ROW_HEIGHT, connectedFormats.length * ROW_HEIGHT);
     };
 
-    // 3. 입력 노드별로 처리
-    inputNodes.forEach((inputNode, inputIndex) => {
-      const connectedChannels = channelsByInput.get(inputNode.id) || [];
+    // 입력 노드를 기준으로 전체 트리布局
+    let currentY = MARGIN;
 
-      // 3-1. 이 입력에 연결된 모든 채널들의 총 높이 계산
-      const totalChannelHeight = connectedChannels.reduce((sum, channel) => {
-        return sum + getChannelHeight(channel.id);
-      }, 0);
+    inputNodes.forEach(inputNode => {
+      // 입력 노드 배치 (column 0)
+      const inputY = currentY;
+      nodePositions.set(inputNode.id, { x: START_X, y: inputY });
+      processedNodes.add(inputNode.id);
 
-      // 3-2. 입력 노드를 중앙에 배치 (채널들의 중앙)
-      const inputY = inputIndex * (totalChannelHeight + ROW_HEIGHT * 2);
-      const inputCenterY = inputY + totalChannelHeight / 2;
+      // 하위 자식들 찾기
+      const channelChildren = getChildren(inputNode.id, 'channel');
+      const searchChildren = getChildren(inputNode.id, 'search');
+      const allChildren = [...channelChildren, ...searchChildren];
 
-      const inputPosition = {
-        x: START_X,
-        y: inputCenterY,
-      };
-      nodePositions.set(inputNode.id, inputPosition);
-      updatedNodes.push({ ...inputNode, position: inputPosition });
+      if (allChildren.length === 0) {
+        currentY += ROW_HEIGHT + MARGIN;
+        return;
+      }
 
-      // 3-3. 채널 노드들을 입력 노드 중심 기준으로 상하 배치
-      let currentChannelY = inputY;
-      connectedChannels.forEach((channelNode) => {
-        const channelHeight = getChannelHeight(channelNode.id);
-        const channelCenterY = currentChannelY + channelHeight / 2;
+      // 입력 노드 기준으로 모든 하위 노드들의 정확한 중앙정렬 시스템
+      const allChildrenCount = channelChildren.length + searchChildren.length;
+      if (allChildrenCount > 0) {
+        // 1단계: 입력 노드 중심에 2단계 노드들(채널/서치) 그룹 중앙정렬
+        const totalGroupHeight = allChildrenCount * ROW_HEIGHT + (allChildrenCount - 1) * MARGIN;
+        // 입력 노드의 Y값이 채널/서치 노드들의 중앙값과 일치하도록 계산
+        // 채널 노드들의 첫번째 노드 시작 위치 = 입력 노드 Y - (전체 그룹 높이 - ROW_HEIGHT) / 2
+        const groupStartY = inputY - (totalGroupHeight - ROW_HEIGHT) / 2;
 
-        const channelPosition = {
-          x: START_X + COLUMN_WIDTH,
-          y: channelCenterY,
-        };
-        nodePositions.set(channelNode.id, channelPosition);
+        // 2단계 노드들의 위치를 저장하고 하위 노드들을 그룹화
+        const level2NodeGroups: Array<{
+          nodes: Array<{ id: string; y: number; type: string }>;
+          searchNodes: Array<{ id: string; y: number; type: string }>;
+          contentNodes: any[];
+          formatNodes: any[];
+        }> = [];
 
-        const existingIndex = updatedNodes.findIndex((n) => n.id === channelNode.id);
-        if (existingIndex >= 0) {
-          updatedNodes[existingIndex] = { ...channelNode, position: channelPosition };
-        } else {
-          updatedNodes.push({ ...channelNode, position: channelPosition });
-        }
+        // 채널 자식들 처리 (채널 → 서치 → 콘텐츠 → 포맷 구조)
+        channelChildren.forEach((channelChild, index) => {
+          const channelY = groupStartY + index * (ROW_HEIGHT + MARGIN);
+          nodePositions.set(channelChild.id, { x: START_X + COLUMN_WIDTH, y: channelY });
+          processedNodes.add(channelChild.id);
 
-        // 3-4. 이 채널에 연결된 포맷 노드들을 채널 중심 기준으로 상하 배치
-        const connectedFormats = edges
-          .filter((e) => e.source === channelNode.id)
-          .map((e) => formatNodes.find((n) => n.id === e.target))
-          .filter((n): n is CustomNode => n !== undefined);
+          // 이 채널 노드에 연결된 서치 자식들 찾기
+          const searchChildrenOfChannel = getChildren(channelChild.id, 'search');
+          const allContentChildren = [];
+          let searchNodesOfChannel = [];
 
-        if (connectedFormats.length > 0) {
-          connectedFormats.forEach((formatNode, formatIndex) => {
-            // 포맷을 채널 중심 기준으로 상하 균등 배치
-            const offset = (formatIndex - (connectedFormats.length - 1) / 2) * ROW_HEIGHT;
-            const formatPosition = {
-              x: START_X + COLUMN_WIDTH * 2,
-              y: channelCenterY + offset,
-            };
-            nodePositions.set(formatNode.id, formatPosition);
+          // 채널에 연결된 서치 노드들 처리
+          if (searchChildrenOfChannel.length > 0) {
+            const searchTotalHeight = searchChildrenOfChannel.length * ROW_HEIGHT + (searchChildrenOfChannel.length - 1) * MARGIN;
+            // 채널 노드의 Y값이 서치 노드들의 중앙값과 일치하도록 계산
+            const searchStartY = channelY - (searchTotalHeight - ROW_HEIGHT) / 2;
 
-            const existingFormatIndex = updatedNodes.findIndex((n) => n.id === formatNode.id);
-            if (existingFormatIndex >= 0) {
-              updatedNodes[existingFormatIndex] = { ...formatNode, position: formatPosition };
-            } else {
-              updatedNodes.push({ ...formatNode, position: formatPosition });
+            searchChildrenOfChannel.forEach((searchChild, searchIndex) => {
+              const searchY = searchStartY + searchIndex * (ROW_HEIGHT + MARGIN);
+              nodePositions.set(searchChild.id, { x: START_X + COLUMN_WIDTH * 2, y: searchY });
+              processedNodes.add(searchChild.id);
+
+              // 이 서치 노드의 콘텐츠 자식들 찾기
+              const contentChildrenOfSearch = getChildren(searchChild.id, 'content');
+              contentChildrenOfSearch.forEach(contentChild => {
+                const formatChildren = getChildren(contentChild.id, 'format');
+                allContentChildren.push({ content: contentChild, formats: formatChildren, parentSearchY: searchY });
+              });
+
+              searchNodesOfChannel.push({ id: searchChild.id, y: searchY, type: 'search' });
+            });
+          } else {
+            // 채널에 직접 연결된 서치 노드가 없는 경우, 채널에 직접 연결된 콘텐츠들 처리
+            const contentChildrenOfChannel = getChildren(channelChild.id, 'content');
+            contentChildrenOfChannel.forEach(contentChild => {
+              const formatChildren = getChildren(contentChild.id, 'format');
+              allContentChildren.push({ content: contentChild, formats: formatChildren, parentSearchY: null });
+            });
+          }
+
+          level2NodeGroups.push({
+            nodes: [{ id: channelChild.id, y: channelY, type: 'channel' }],
+            searchNodes: searchNodesOfChannel,
+            contentNodes: allContentChildren,
+            formatNodes: []
+          });
+        });
+
+        // 입력 노드에 직접 연결된 서치 자식들 처리 (채널을 거치지 않은 서치들)
+        const directSearchChildren = searchChildren.filter(searchChild =>
+          !channelChildren.some(channelChild =>
+            getChildren(channelChild.id, 'search').some(channelSearch => channelSearch.id === searchChild.id)
+          )
+        );
+
+        directSearchChildren.forEach((searchChild, index) => {
+          const searchY = groupStartY + (channelChildren.length + index) * (ROW_HEIGHT + MARGIN);
+          nodePositions.set(searchChild.id, { x: START_X + COLUMN_WIDTH * 2, y: searchY });
+          processedNodes.add(searchChild.id);
+
+          // 이 서치 노드의 콘텐츠 자식들 찾기
+          const contentChildrenOfSearch = getChildren(searchChild.id, 'content');
+          const allContentChildren = [];
+
+          contentChildrenOfSearch.forEach(contentChild => {
+            const formatChildren = getChildren(contentChild.id, 'format');
+            allContentChildren.push({ content: contentChild, formats: formatChildren, parentSearchY: searchY });
+          });
+
+          level2NodeGroups.push({
+            nodes: [{ id: searchChild.id, y: searchY, type: 'search' }],
+            searchNodes: [],
+            contentNodes: allContentChildren,
+            formatNodes: []
+          });
+        });
+
+        // 2단계: 3단계 노드들(콘텐츠) 중앙정렬 - 각 부모 노드별로 그룹화하여 처리
+        level2NodeGroups.forEach(group => {
+          // 콘텐츠 노드들을 부모 노드별로 그룹화
+          const contentGroups = new Map<string, any[]>();
+
+          group.contentNodes.forEach(nodeData => {
+            const parentKey = nodeData.parentSearchY || `channel_${group.nodes[0].id}`;
+            if (!contentGroups.has(parentKey)) {
+              contentGroups.set(parentKey, []);
+            }
+            contentGroups.get(parentKey)!.push(nodeData);
+          });
+
+          // 각 부모 노드별로 콘텐츠 노드들 정렬
+          contentGroups.forEach((contentDataList, parentKey) => {
+            if (contentDataList.length > 0) {
+              const contentTotalHeight = contentDataList.length * ROW_HEIGHT + (contentDataList.length - 1) * MARGIN;
+
+              // 부모 노드의 Y값 찾기
+              let parentNodeY: number;
+              if (typeof parentKey === 'number') {
+                // 서치 노드의 Y값
+                parentNodeY = parentKey;
+              } else {
+                // 채널 노드의 Y값
+                parentNodeY = group.nodes[0].y;
+              }
+
+              // 부모 노드의 Y값이 콘텐츠 노드들의 중앙값과 일치하도록 계산
+              const contentStartY = parentNodeY - (contentTotalHeight - ROW_HEIGHT) / 2;
+
+              contentDataList.forEach((nodeData, index) => {
+                const contentY = contentStartY + index * (ROW_HEIGHT + MARGIN);
+                nodePositions.set(nodeData.content.id, { x: START_X + COLUMN_WIDTH * 3, y: contentY });
+                processedNodes.add(nodeData.content.id);
+
+                // 3단계: 4단계 노드들(포맷) 중앙정렬 - 각 콘텐츠 노드 중심에 자신의 포맷 그룹 중앙정렬
+                if (nodeData.formats.length > 0) {
+                  const formatTotalHeight = nodeData.formats.length * ROW_HEIGHT + (nodeData.formats.length - 1) * (MARGIN / 2);
+                  // 콘텐츠 노드의 Y값이 포맷 노드들의 중앙값과 일치하도록 계산
+                  const formatStartY = contentY - (formatTotalHeight - ROW_HEIGHT) / 2;
+
+                  nodeData.formats.forEach((formatChild, formatIndex) => {
+                    const formatY = formatStartY + formatIndex * (ROW_HEIGHT + MARGIN / 2);
+                    nodePositions.set(formatChild.id, { x: START_X + COLUMN_WIDTH * 4, y: formatY });
+                    processedNodes.add(formatChild.id);
+                  });
+                }
+              });
             }
           });
-        }
+        });
+      }
 
-        currentChannelY += channelHeight;
+      // 다음 입력 노드를 위한 Y 위치 계산
+      let maxHeight = inputY + ROW_HEIGHT;
+      let minY = inputY;
+
+      // 모든 하위 노드들의 Y 위치 범위 계산
+      allChildren.forEach(child => {
+        const childY = nodePositions.get(child.id)?.y || 0;
+        maxHeight = Math.max(maxHeight, childY + ROW_HEIGHT);
+        minY = Math.min(minY, childY);
+
+        // 자식들의 자식들도 고려
+        const grandChildren = getChildren(child.id, 'content');
+        grandChildren.forEach(grandChild => {
+          const grandChildY = nodePositions.get(grandChild.id)?.y || 0;
+          maxHeight = Math.max(maxHeight, grandChildY + ROW_HEIGHT);
+          minY = Math.min(minY, grandChildY);
+
+          // 증손자들도 고려
+          const greatGrandChildren = getChildren(grandChild.id, 'format');
+          greatGrandChildren.forEach(greatGrandChild => {
+            const greatGrandChildY = nodePositions.get(greatGrandChild.id)?.y || 0;
+            maxHeight = Math.max(maxHeight, greatGrandChildY + ROW_HEIGHT);
+            minY = Math.min(minY, greatGrandChildY);
+          });
+        });
+      });
+
+      currentY = maxHeight + MARGIN * 2;
+    });
+
+    // 연결되지 않은 노드들 오른쪽에 정렬
+    const unconnectedChannels = channelNodes.filter(n => !processedNodes.has(n.id));
+    const unconnectedSearches = searchNodes.filter(n => !processedNodes.has(n.id));
+    const unconnectedContents = contentNodes.filter(n => !processedNodes.has(n.id));
+    const unconnectedFormats = formatNodes.filter(n => !processedNodes.has(n.id));
+
+    let unconnectedY = MARGIN;
+
+    unconnectedChannels.forEach((node, index) => {
+      nodePositions.set(node.id, {
+        x: START_X + COLUMN_WIDTH,
+        y: unconnectedY + index * ROW_HEIGHT
       });
     });
 
-    // 연결되지 않은 채널 노드들 처리
-    let globalChannelY = (inputNodes.length > 0)
-      ? Math.max(...Array.from(nodePositions.values()).map(p => p.y)) + ROW_HEIGHT * 2
-      : 100;
-
-    const unconnectedChannels = channelNodes.filter((n) => !nodePositions.has(n.id));
-    unconnectedChannels.forEach((node) => {
-      const position = {
-        x: START_X + COLUMN_WIDTH,
-        y: globalChannelY,
-      };
-      nodePositions.set(node.id, position);
-      updatedNodes.push({ ...node, position });
-      globalChannelY += ROW_HEIGHT;
+    unconnectedSearches.forEach((node, index) => {
+      nodePositions.set(node.id, {
+        x: START_X + COLUMN_WIDTH * 2,
+        y: unconnectedY + (unconnectedChannels.length + index) * ROW_HEIGHT
+      });
     });
 
-    // 연결되지 않은 포맷 노드들 처리
-    let globalFormatY = (inputNodes.length > 0)
-      ? Math.max(...Array.from(nodePositions.values()).map(p => p.y)) + ROW_HEIGHT * 2
-      : 100;
+    unconnectedContents.forEach((node, index) => {
+      nodePositions.set(node.id, {
+        x: START_X + COLUMN_WIDTH * 3,
+        y: unconnectedY + (unconnectedChannels.length + unconnectedSearches.length + index) * ROW_HEIGHT
+      });
+    });
 
-    const unconnectedFormats = formatNodes.filter((n) => !nodePositions.has(n.id));
-    unconnectedFormats.forEach((node) => {
-      const position = {
-        x: START_X + COLUMN_WIDTH * 2,
-        y: globalFormatY,
-      };
-      updatedNodes.push({ ...node, position });
-      globalFormatY += ROW_HEIGHT;
+    unconnectedFormats.forEach((node, index) => {
+      nodePositions.set(node.id, {
+        x: START_X + COLUMN_WIDTH * 4,
+        y: unconnectedY + (unconnectedChannels.length + unconnectedSearches.length + unconnectedContents.length + index) * ROW_HEIGHT
+      });
+    });
+
+    // 위치 정보 적용
+    nodes.forEach(node => {
+      const position = nodePositions.get(node.id);
+      if (position) {
+        updatedNodes.push({ ...node, position });
+      } else {
+        // 위치를 찾지 못한 노드는 기존 위치 유지
+        updatedNodes.push(node);
+      }
     });
 
     setNodes(updatedNodes);
-    console.log('✓ 노드 자동 정렬 완료 (입력 중앙, 채널 순서, 포맷 충돌 방지)');
+    console.log('✓ 트리 구조 수평 중앙정렬 완료 (상위 노드 기준 하위 노드 수평 중앙정렬)');
   }, [nodes, edges, setNodes]);
 
   // 노드 복제 (상위 노드 연결만 유지)
@@ -781,21 +1079,368 @@ const CanvasInner = forwardRef<CanvasHandle, CanvasProps>(
 
   // 포맷 노드 선택 토글
   const toggleFormatSelection = useCallback((nodeId: string) => {
+    console.log('🟣 toggleFormatSelection called for nodeId:', nodeId);
+
+    // 내부 업데이트 플래그 설정하여 useEffect가 이 변경을 무시하도록 함
+    isInternalUpdateRef.current = true;
+
+    // 먼저 현재 상태에서 노드를 찾아서 새로운 selected 값을 계산
+    const currentNodes = workspace.nodes;
+    const targetNode = currentNodes.find(n => n.id === nodeId && n.type === 'content_format');
+
+    if (!targetNode) {
+      console.error('🟣 Target node not found:', nodeId);
+      return;
+    }
+
+    const currentSelected = targetNode.data.selected ?? false;
+    const newSelected = !currentSelected;
+
+    console.log('🟣 Toggling selection for node:', targetNode.data.label,
+                'current selected:', currentSelected, 'new selected:', newSelected);
+
+    // 동시에 업데이트할 노드 생성
+    const updatedNode = {
+      ...targetNode,
+      data: {
+        ...targetNode.data,
+        selected: newSelected,
+      },
+    };
+
+    // setNodes와 setWorkspace를 동시에 호출
     setNodes((nds) =>
-      nds.map((node) => {
-        if (node.id === nodeId && node.type === 'content_format') {
-          return {
-            ...node,
-            data: {
-              ...node.data,
-              selected: !node.data.selected,
-            },
-          };
-        }
-        return node;
-      })
+      nds.map((node) =>
+        node.id === nodeId ? updatedNode : node
+      )
     );
-  }, [setNodes]);
+
+    setWorkspace((prev) => {
+      const updatedNodes = prev.nodes.map((node) =>
+        node.id === nodeId ? updatedNode : node
+      );
+
+      console.log('🟣 Updated workspace nodes for format selection');
+      return {
+        ...prev,
+        nodes: updatedNodes,
+      };
+    });
+  }, [setNodes, setWorkspace, workspace.nodes]);
+
+  // 다음 순서 노드 자동 생성 및 연결
+  const addNextNode = useCallback((nodeId: string, nodeType: string) => {
+    const currentNode = nodes.find((n) => n.id === nodeId);
+    if (!currentNode) return;
+
+    let nextNodeType: 'input' | 'channel' | 'search' | 'content' | 'content_format' | null = null;
+
+    // 노드 순서에 따른 다음 노드 타입 결정
+    switch (nodeType) {
+      case 'input':
+        nextNodeType = 'channel';
+        break;
+      case 'channel':
+        nextNodeType = 'search';
+        break;
+      case 'search':
+        nextNodeType = 'content';
+        break;
+      case 'content':
+        nextNodeType = 'content_format';
+        break;
+      case 'content_format':
+        nextNodeType = null; // 포맷은 마지막
+        break;
+      default:
+        nextNodeType = null;
+    }
+
+    if (!nextNodeType) return;
+
+    // 다음 노드 생성
+    const newNodeId = uuidv4();
+    let config: InputNodeConfig | ChannelNodeConfig | SearchNodeConfig | ContentNodeConfig | ContentFormatNodeConfig;
+    let label = '';
+
+    if (nextNodeType === 'channel') {
+      config = {
+        kind: 'channel',
+        name: '새 채널',
+        channelType: 'linkedin',
+        personaTags: [],
+        toneTags: [],
+        highLevelContentTags: [],
+        channelKnowledge: '',
+        toneMannerExample: '',
+        prohibitedTypes: [],
+        topics: [],
+      };
+      label = '채널';
+    } else if (nextNodeType === 'search') {
+      config = {
+        kind: 'search',
+        query: '',
+        channels: ['reddit', 'twitter', 'linkedin'],
+        timeFilter: 'week',
+        sortFilter: 'hot',
+        maxResults: 20,
+        searchType: 'both',
+      };
+      label = '서치';
+    } else if (nextNodeType === 'content') {
+      config = {
+        kind: 'content',
+        title: '새 콘텐츠',
+        body: '',
+        contentType: 'text',
+        status: 'draft',
+        tags: [],
+        metadata: {
+          wordCount: 0,
+          estimatedReadTime: 1,
+          priority: 'medium',
+        },
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      };
+      label = '콘텐츠';
+    } else {
+      config = {
+        kind: 'content_format',
+        name: '새 포맷',
+        mappedContentType: '',
+        formatExampleText: '',
+        formatStructureDescription: '',
+        generationPromptTemplate: '',
+      };
+      label = '콘텐츠 포맷';
+    }
+
+    const newNode: CustomNode = {
+      id: newNodeId,
+      type: nextNodeType,
+      position: { x: currentNode.position.x + 400, y: currentNode.position.y },
+      data: { label, config },
+    };
+
+    // 노드와 엣지 동시에 추가
+    setNodes((nds) => [...nds, newNode]);
+
+    const newEdge = {
+      id: uuidv4(),
+      source: nodeId,
+      target: newNodeId,
+      type: 'smoothstep',
+      style: { stroke: '#6366f1', strokeWidth: 2 }
+    };
+
+    setEdges((eds) => [...eds, newEdge]);
+    console.log(`✓ 자동 연결 생성: ${nodeType} → ${nextNodeType}`);
+  }, [nodes, setNodes, setEdges]);
+
+  // 서치 노드 선택 토글 핸들러
+  const handleToggleSearchSelection = useCallback((nodeId: string) => {
+    setSelectedSearchNodes(prev => {
+      const newSet = new Set(prev);
+      if (newSet.has(nodeId)) {
+        newSet.delete(nodeId);
+      } else {
+        newSet.add(nodeId);
+      }
+      return newSet;
+    });
+  }, []);
+
+  // 완전히 새로운 접근: 각 노드에 id와 필요한 props 전달
+  const nodeTypes = useMemo(() => {
+    return {
+      input: InputNode,
+      channel: ChannelNode,
+      content_format: ContentFormatNode,
+      content: (props: any) => <ContentNode {...props} id={props.id} />,
+      search: (props: any) => <SearchNode {...props} id={props.id} isExecuting={executingSearchNodes.has(props.id)} />,
+      canvas_box: CanvasBoxNode,
+    };
+  }, [workspace.id, executingSearchNodes]);
+
+  // 단일 서치 노드 실행 핸들러 (기존 로직 재사용)
+  const executeSingleSearchNode = useCallback(async (searchNodeId: string) => {
+    try {
+      // 실행 상태에 추가
+      setExecutingSearchNodes(prev => new Set(prev).add(searchNodeId));
+
+      // 현재 워크스페이스 정보 가져오기
+      const currentWorkspace = workspaceRef.current;
+
+      // 입력 → 채널 → 서치 노드 경로 찾기
+      const searchNode = currentWorkspace.nodes.find((n) => n.id === searchNodeId && n.type === 'search');
+      if (!searchNode) {
+        console.error('서치 노드를 찾을 수 없습니다:', searchNodeId);
+        return;
+      }
+
+      // 입력 노드와 채널 노드 찾기
+      // 서치 노드로 들어오는 엣지 찾기 (채널 → 서치)
+      const channelToSearchEdges = currentWorkspace.edges.filter((e) => e.target === searchNodeId);
+
+      if (channelToSearchEdges.length === 0) {
+        console.error('서치 노드에 연결된 채널 노드를 찾을 수 없습니다');
+        alert('서치 노드를 실행하려면 채널 노드가 연결되어 있어야 합니다.');
+        return;
+      }
+
+      const channelNodeId = channelToSearchEdges[0].source;
+
+      // 채널 노드로 들어오는 엣지 찾기 (입력 → 채널)
+      const inputToChannelEdges = currentWorkspace.edges.filter((e) => e.target === channelNodeId);
+
+      if (inputToChannelEdges.length === 0) {
+        console.error('채널 노드에 연결된 입력 노드를 찾을 수 없습니다');
+        alert('서치 노드를 실행하려면 입력 노드가 채널 노드에 연결되어 있어야 합니다.');
+        return;
+      }
+
+      const inputNodeId = inputToChannelEdges[0].source;
+
+      console.log(`🚀 서치 노드 실행: ${inputNodeId} → ${channelNodeId} → ${searchNodeId}`);
+
+      // API 호출
+      const response = await fetch('/api/search/execute', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          inputNodeId,
+          channelNodeId,
+          searchNodeId,
+          workspaceId: currentWorkspace.id
+        })
+      });
+
+      const result = await response.json();
+
+      if (!response.ok) {
+        throw new Error(result.error || '서치 노드 실행 실패');
+      }
+
+      console.log('✅ 서치 노드 실행 완료:', result);
+
+      // 워크스페이스 상태 업데이트 (서버에 이미 저장되었으므로, 클라이언트도 업데이트)
+      if (result.success) {
+        // 서치 노드 상태 업데이트
+        setNodes((nds) =>
+          nds.map((node) => {
+            if (node.id === searchNodeId) {
+              return {
+                ...node,
+                data: {
+                  ...node.data,
+                  config: {
+                    ...node.data.config,
+                    lastExecutedAt: new Date().toISOString(),
+                    searchNodeResult: result.result
+                  }
+                }
+              };
+            }
+            return node;
+          })
+        );
+
+        // 새 콘텐츠 노드가 생성된 경우 추가
+        if (result.newContentNode) {
+          setNodes((nds) => [...nds, result.newContentNode]);
+
+          // 새 엣지 추가
+          setEdges((eds) => [
+            ...eds,
+            {
+              id: uuidv4(),
+              source: searchNodeId,
+              target: result.newContentNode.id,
+              type: 'custom',
+              data: { onDelete: handleEdgeDelete }
+            }
+          ]);
+        }
+
+        // 성공 메시지 표시
+        alert(`서치 노드 실행 완료!\n${result.message}`);
+      } else {
+        alert('서치 노드 실행 실패: ' + (result.error || '알 수 없는 오류'));
+      }
+
+    } catch (error) {
+      console.error('❌ 서치 노드 실행 오류:', error);
+      alert('서치 노드 실행 중 오류가 발생했습니다: ' + (error instanceof Error ? error.message : String(error)));
+    } finally {
+      // 실행 상태에서 제거 (성공/실패 관계없이)
+      setExecutingSearchNodes(prev => {
+        const newSet = new Set(prev);
+        newSet.delete(searchNodeId);
+        return newSet;
+      });
+    }
+  }, [workspaceRef, setNodes, setEdges, setExecutingSearchNodes]);
+
+  // 체크된 서치 노드들을 위에서부터 아래로 순차 실행하는 함수
+  const executeCheckedSearchNodes = useCallback(async () => {
+    if (selectedSearchNodes.size === 0) {
+      alert('체크된 서치 노드가 없습니다.');
+      return;
+    }
+
+    const workspace = workspaceRef.current;
+    if (!workspace || !workspace.nodes) {
+      alert('워크스페이스를 찾을 수 없습니다.');
+      return;
+    }
+
+    // 체크된 서치 노드들을 Y 좌표 기준으로 정렬 (위에서부터 아래로)
+    const checkedSearchNodes = nodes
+      .filter(node => node.type === 'search' && selectedSearchNodes.has(node.id))
+      .sort((a, b) => a.position.y - b.position.y);
+
+    if (checkedSearchNodes.length === 0) {
+      alert('체크된 서치 노드를 찾을 수 없습니다.');
+      return;
+    }
+
+    console.log(`🔍 체크된 서치 노드 ${checkedSearchNodes.length}개 순차 실행 시작 (위 → 아래)`);
+
+    try {
+      // 각 서치 노드를 순차적으로 실행
+      for (let i = 0; i < checkedSearchNodes.length; i++) {
+        const searchNode = checkedSearchNodes[i];
+        console.log(`📍 [${i + 1}/${checkedSearchNodes.length}] 서치 노드 실행: ${searchNode.data.label} (Y: ${searchNode.position.y})`);
+
+        try {
+          await executeSingleSearchNode(searchNode.id);
+          console.log(`✅ 서치 노드 ${searchNode.data.label} 실행 완료`);
+        } catch (error) {
+          console.error(`❌ 서치 노드 ${searchNode.data.label} 실행 실패:`, error);
+          // 하나가 실패해도 계속 진행할지 물어봄
+          const continueExecution = confirm(`서치 노드 "${searchNode.data.label}" 실행에 실패했습니다. 계속 진행하시겠습니까?`);
+          if (!continueExecution) {
+            break;
+          }
+        }
+
+        // 다음 노드 실행전 약간의 지연 (사용자 경험 향상)
+        if (i < checkedSearchNodes.length - 1) {
+          await new Promise(resolve => setTimeout(resolve, 1000));
+        }
+      }
+
+      alert(`✅ 체크된 서치 노드 실행 완료! 총 ${checkedSearchNodes.length}개 노드 처리됨.`);
+
+    } catch (error) {
+      console.error('❌ 서치 노드 순차 실행 중 오류:', error);
+      alert('서치 노드 실행 중 오류가 발생했습니다.');
+    }
+  }, [selectedSearchNodes, executeSingleSearchNode]);
 
   // 캔버스 박스 추가
   const handleAddCanvasBox = useCallback(() => {
@@ -823,13 +1468,14 @@ const CanvasInner = forwardRef<CanvasHandle, CanvasProps>(
     console.log('✓ 캔버스 박스 추가됨');
   }, [setNodes, getViewport]);
 
-  // autoLayout 함수를 외부에 노출
+  // 함수들을 외부에 노출
   useImperativeHandle(ref, () => ({
     autoLayout,
-  }), [autoLayout]);
+    executeCheckedSearchNodes,
+  }), [autoLayout, executeCheckedSearchNodes]);
 
   return (
-    <NodeActionsContext.Provider value={{ duplicateNode: handleNodeDuplicate, toggleFormatSelection }}>
+    <NodeActionsContext.Provider value={{ duplicateNode: handleNodeDuplicate, toggleFormatSelection, addNextNode }}>
       <div ref={reactFlowWrapper} className="flex-1 relative">
         {/* 노드 추가 툴바 */}
         <div className="absolute top-4 left-4 z-10 bg-white rounded-lg shadow-md p-2 flex gap-2">
@@ -844,6 +1490,18 @@ const CanvasInner = forwardRef<CanvasHandle, CanvasProps>(
             className="px-3 py-2 bg-blue-500 text-white rounded hover:bg-blue-600 text-sm font-medium"
           >
             + 채널
+          </button>
+          <button
+            onClick={() => addNode('search')}
+            className="px-3 py-2 bg-orange-500 text-white rounded hover:bg-orange-600 text-sm font-medium"
+          >
+            + 서치
+          </button>
+          <button
+            onClick={() => addNode('content')}
+            className="px-3 py-2 bg-teal-500 text-white rounded hover:bg-teal-600 text-sm font-medium"
+          >
+            + 콘텐츠
           </button>
           <button
             onClick={() => addNode('content_format')}
@@ -862,25 +1520,42 @@ const CanvasInner = forwardRef<CanvasHandle, CanvasProps>(
         </div>
 
         {/* React Flow 캔버스 */}
-        <ReactFlow
-          nodes={nodes}
-          edges={edges}
-          onNodesChange={onNodesChange}
-          onEdgesChange={onEdgesChange}
-          onConnect={onConnect}
-          onNodeClick={onNodeClick}
-          nodeTypes={nodeTypes}
-          edgeTypes={edgeTypes}
-          panOnDrag={[1, 2]}
-          selectionOnDrag={true}
-          panOnScroll={true}
-          panOnScrollSpeed={0.8}
-          selectionMode="partial"
-          multiSelectionKeyCode={null}
-          deleteKeyCode={null}
-          selectNodesOnDrag={true}
-          fitView
-        >
+        <SearchSelectionContext.Provider value={{
+          selectedNodes: selectedSearchNodes,
+          toggleSelection: handleToggleSearchSelection
+        }}>
+          <ReactFlow
+            nodes={nodes}
+            edges={edges}
+            onNodesChange={onNodesChange}
+            onEdgesChange={onEdgesChange}
+            onConnect={onConnect}
+            onNodeClick={onNodeClick}
+            onSelectionChange={(selection) => {
+              if (selection.nodes.length > 0) {
+                const selectedId = selection.nodes[0].id;
+                const customNode = nodes.find((n) => n.id === selectedId) as CustomNode;
+                setSelectedNode(customNode);
+              } else {
+                setSelectedNode(null);
+              }
+            }}
+            nodeTypes={nodeTypes}
+            edgeTypes={edgeTypes}
+            panOnDrag={[1, 2]}
+            selectionOnDrag={true}
+            panOnScroll={true}
+            panOnScrollSpeed={0.8}
+            selectionMode="partial"
+            multiSelectionKeyCode={null}
+            deleteKeyCode={null}
+            selectNodesOnDrag={true}
+            fitView
+            connectionMode="loose"
+            connectionLineType="smoothstep"
+            snapToGrid={true}
+            snapGrid={[10, 10]}
+          >
           <Background />
           <Controls showInteractive={false}>
             <ControlButton onClick={handleAddCanvasBox} title="캔버스 박스 추가">
@@ -901,10 +1576,14 @@ const CanvasInner = forwardRef<CanvasHandle, CanvasProps>(
           </Controls>
           <MiniMap />
         </ReactFlow>
-      </div>
+      </SearchSelectionContext.Provider>
+        </div>
     </NodeActionsContext.Provider>
   );
-});
+}
+
+// CanvasInner를 forwardRef로 감싸기
+const CanvasInner = forwardRef(CanvasInnerFunction);
 
 // ReactFlowProvider로 감싸서 export
 const Canvas = forwardRef<CanvasHandle, CanvasProps>((props, ref) => {

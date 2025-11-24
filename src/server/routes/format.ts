@@ -1,5 +1,5 @@
 import express from 'express';
-import { callOpenAIGPT5Generic } from '../aiClient.js';
+import { callOpenAIGPT5Generic } from '../llm.js';
 import { db } from '../db.js';
 import { v4 as uuidv4 } from 'uuid';
 import type { Node, ContentFormatNodeConfig } from '../types.js';

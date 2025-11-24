@@ -2,7 +2,7 @@ import { v4 as uuidv4 } from 'uuid';
 import * as fs from 'fs';
 import * as path from 'path';
 import { fileURLToPath } from 'url';
-import type { Workspace, Node, Edge, GeneratedContent, InputNodeConfig } from './types.js';
+import type { Workspace, Node, Edge, GeneratedContent, InputNodeConfig, SlackMessage } from './types.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -14,12 +14,14 @@ const DB_FILE = path.join(DATA_DIR, 'db.json');
 interface DatabaseState {
   workspaces: Record<string, Workspace>;
   generatedContents: Record<string, GeneratedContent[]>;
+  slackMessages: SlackMessage[];
 }
 
 // 인메모리 데이터베이스 (파일 기반 영구 저장 지원)
 class Database {
   private workspaces: Map<string, Workspace> = new Map();
   private generatedContents: Map<string, GeneratedContent[]> = new Map();
+  private slackMessages: SlackMessage[] = [];
 
   constructor() {
     // 데이터 디렉토리가 없으면 생성
@@ -92,6 +94,7 @@ class Database {
         }
 
         this.generatedContents = new Map(Object.entries(state.generatedContents));
+        this.slackMessages = Array.isArray(state.slackMessages) ? state.slackMessages : [];
 
         // 복구된 워크스페이스가 있으면 즉시 저장
         if (repairedCount > 0) {
@@ -108,6 +111,7 @@ class Database {
           console.log('✓ 데이터 파일에서 로드 완료:', DB_FILE);
           console.log(`  - 워크스페이스: ${this.workspaces.size}개`);
           console.log(`  - 생성된 콘텐츠: ${this.generatedContents.size}개 그룹`);
+          console.log(`  - Slack 메시지: ${this.slackMessages.length}개`);
         }
       } else {
         console.log('데이터 파일이 없습니다. 초기 워크스페이스를 생성합니다.');
@@ -128,6 +132,7 @@ class Database {
       const state: DatabaseState = {
         workspaces: Object.fromEntries(this.workspaces),
         generatedContents: Object.fromEntries(this.generatedContents),
+        slackMessages: this.slackMessages,
       };
 
       fs.writeFileSync(DB_FILE, JSON.stringify(state, null, 2), 'utf-8');
@@ -300,6 +305,37 @@ class Database {
   clearGeneratedContents(workspaceId: string): void {
     this.generatedContents.set(workspaceId, []);
     this.saveToFile(); // 파일에 저장
+  }
+
+  // Slack 메시지 저장
+  saveSlackMessage(message: SlackMessage): void {
+    this.slackMessages.push(message);
+    // 최대 1000개까지만 저장 (오래된 것부터 삭제)
+    if (this.slackMessages.length > 1000) {
+      this.slackMessages = this.slackMessages.slice(-1000);
+    }
+    this.saveToFile();
+  }
+
+  // Slack 메시지 조회 (최신순)
+  getSlackMessages(limit?: number): SlackMessage[] {
+    const messages = [...this.slackMessages].reverse(); // 최신순
+    return limit ? messages.slice(0, limit) : messages;
+  }
+
+  // 특정 Slack 메시지 조회
+  getSlackMessage(id: string): SlackMessage | undefined {
+    return this.slackMessages.find((m) => m.id === id);
+  }
+
+  // Slack 메시지 업데이트 (전송 상태 등)
+  updateSlackMessage(id: string, updates: Partial<SlackMessage>): boolean {
+    const index = this.slackMessages.findIndex((m) => m.id === id);
+    if (index === -1) return false;
+
+    this.slackMessages[index] = { ...this.slackMessages[index], ...updates };
+    this.saveToFile();
+    return true;
   }
 }
 

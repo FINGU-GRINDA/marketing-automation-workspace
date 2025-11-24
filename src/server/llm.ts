@@ -1,4 +1,4 @@
-import { callOpenAIGPT5Generic } from './aiClient.js';
+import Anthropic from '@anthropic-ai/sdk';
 import type {
   InputNodeConfig,
   ChannelNodeConfig,
@@ -13,12 +13,18 @@ import type {
 // 환경 변수에서 API 키 가져오기
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
 const GAMMA_API_KEY = process.env.GAMMA_API_KEY;
+const ANTHROPIC_API_KEY = process.env.ANTHROPIC_API_KEY;
 
 // API 키 설정 확인
-if (!OPENAI_API_KEY) {
-  console.error('❌ OPENAI_API_KEY 환경 변수가 설정되지 않았습니다.');
-  throw new Error('OPENAI_API_KEY 환경 변수가 필요합니다.');
+if (!ANTHROPIC_API_KEY) {
+  console.error('❌ ANTHROPIC_API_KEY 환경 변수가 설정되지 않았습니다.');
+  throw new Error('ANTHROPIC_API_KEY 환경 변수가 필요합니다.');
 }
+
+// Anthropic 클라이언트 초기화
+const anthropic = new Anthropic({
+  apiKey: ANTHROPIC_API_KEY,
+});
 
 /**
  * 생성 컨텍스트 구성 함수
@@ -754,6 +760,7 @@ export async function generateImage(
 프롬프트만 출력해주세요. 다른 설명은 필요 없습니다.`;
 
   try {
+    console.log('📝 Claude로 이미지 프롬프트 생성 중...');
     const imagePrompt = await callOpenAIGPT5Generic(promptGenerationPrompt);
     console.log('📝 이미지 프롬프트 생성 완료:', imagePrompt.substring(0, 100));
 
@@ -942,6 +949,116 @@ export async function generateRedditAnalysisQuestions(
       { id: "q4", question: `${inputConfig.topic}과 관련된 최신 트렌드나 변화에 대해 Reddit 사용자들은 어떻게 생각하는가?` },
       { id: "q5", question: `${inputConfig.topic} 도입 시 발생하는 일반적인 문제점과 해결책은 무엇인가?` }
     ];
+  }
+}
+
+/**
+ * Slack 메시지 분석 및 제목/주제 추출
+ */
+export async function analyzeSlackMessage(messageText: string): Promise<{
+  title: string;
+  topic: string;
+}> {
+  console.log('🤖 Slack 메시지 분석 시작...');
+  console.log(`📊 메시지 길이: ${messageText.length}자`);
+
+  const prompt = `다음 Slack 메시지를 분석하여 제목과 주제를 추출해주세요.
+
+[메시지 내용]
+${messageText}
+
+[요구사항]
+1. **제목 (title)**: 메시지의 핵심을 담은 간결한 제목 (20-50자)
+   - 예: "GRINDA AI, Y Combinator 지원 발표"
+   - 예: "AI 마케팅 자동화 도구 투자 유치 소식"
+   - 날짜나 "Slack 메시지" 같은 일반적인 표현은 피하세요
+
+2. **주제 (topic)**: 메시지의 핵심 내용을 한 줄로 요약 (50-100자)
+   - 예: "AI 기반 마케팅 자동화 플랫폼이 YC 지원을 통해 글로벌 시장 진출 계획 발표"
+   - 메시지의 주요 내용과 맥락을 포함하세요
+
+[응답 형식]
+다음 JSON 형식으로만 응답하세요:
+{
+  "title": "추출된 제목",
+  "topic": "한 줄 요약"
+}
+
+JSON만 반환하세요. 다른 설명은 추가하지 마세요.`;
+
+  try {
+    const response = await callOpenAIGPT5Generic(prompt);
+    
+    // JSON 추출
+    const jsonMatch = response.match(/\{[\s\S]*\}/);
+    if (!jsonMatch) {
+      console.warn('⚠️ JSON 파싱 실패, 기본값 사용');
+      return {
+        title: messageText.substring(0, 50) || 'Slack 메시지',
+        topic: messageText.substring(0, 100) || 'Slack 메시지',
+      };
+    }
+
+    const parsed = JSON.parse(jsonMatch[0]);
+    
+    return {
+      title: parsed.title || messageText.substring(0, 50) || 'Slack 메시지',
+      topic: parsed.topic || messageText.substring(0, 100) || 'Slack 메시지',
+    };
+  } catch (error: any) {
+    console.error('❌ Slack 메시지 분석 오류:', error);
+    // 오류 시 기본값 반환
+    return {
+      title: messageText.substring(0, 50) || 'Slack 메시지',
+      topic: messageText.substring(0, 100) || 'Slack 메시지',
+    };
+  }
+}
+
+/**
+ * 범용 Anthropic Claude API 호출 함수
+ */
+export async function callOpenAIGPT5Generic(
+  prompt: string
+): Promise<string> {
+  console.log('🚀 Claude API 일반 호출 시작...');
+  console.log(`📊 프롬프트 길이: ${prompt.length}자`);
+
+  try {
+    const message = await anthropic.messages.create({
+      model: "claude-3-haiku-20240307", // Claude 3 Haiku 모델
+      max_tokens: 8192,
+      temperature: 0.7,
+      system: "You are a helpful assistant. Please provide clear and accurate responses to the user's requests.",
+      messages: [
+        {
+          role: "user",
+          content: prompt
+        }
+      ]
+    });
+
+    const content = message.content[0];
+    
+    if (content.type !== 'text') {
+      throw new Error('Anthropic API 응답이 텍스트 형식이 아닙니다.');
+    }
+
+    const text = content.text;
+
+    if (!text || text.trim() === '') {
+      console.error('❌ 응답 내용 없음:', message);
+      throw new Error('Anthropic 응답에 내용이 없습니다.');
+    }
+
+    console.log('✅ Claude API 일반 호출 성공');
+    return text;
+  } catch (error: any) {
+    console.error('🔥 Anthropic API 오류 상세:', {
+      error: error.message,
+      status: error.status,
+    });
+    throw new Error(`Anthropic API 오류: ${error.message}`);
   }
 }
 

@@ -7,6 +7,7 @@ import workspacesRouter from './routes/workspaces.js';
 import formatRouter from './routes/format.js';
 import searchRouter from './routes/search.js';
 import contentRouter from './routes/content.js';
+import slackRouter from './routes/slack.js';
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -17,13 +18,19 @@ const __dirname = path.dirname(__filename);
 
 // 미들웨어
 app.use(cors());
-app.use(express.json());
 
 // 요청 로깅
 app.use((req, _res, next) => {
   console.log(`${req.method} ${req.path}`);
   next();
 });
+
+// Slack 라우트는 body parser 없이 먼저 등록
+// Slack Events API adapter가 raw body를 직접 처리하므로 body parser를 적용하면 안 됨
+app.use('/api/slack', slackRouter);
+
+// 나머지 라우트는 JSON 파서 사용
+app.use(express.json());
 
 // API 라우트
 app.use('/api/workspaces', workspacesRouter);
@@ -65,4 +72,13 @@ app.listen(PORT, () => {
   console.log(`📡 API available at http://localhost:${PORT}/api`);
   console.log(`🌐 Client served from ${clientBuildPath}`);
   console.log(`💡 Using ${process.env.OPENAI_API_KEY ? 'REAL (OpenAI GPT-5.1)' : 'MOCK'} LLM mode\n`);
+  const llmMode = process.env.ANTHROPIC_API_KEY ? 'REAL (Claude Haiku)' : 'MOCK';
+  const imageMode = process.env.OPENAI_API_KEY ? 'REAL (DALL-E)' : 'MOCK';
+  console.log(`💡 LLM: ${llmMode}, Image: ${imageMode}`);
+  if (process.env.SLACK_SIGNING_SECRET) {
+    const targetWorkspace = process.env.SLACK_TARGET_WORKSPACE_ID || 'default-workspace';
+    console.log(`📨 Slack 연동 활성화 (타겟 워크스페이스: ${targetWorkspace})\n`);
+  } else {
+    console.log(`📨 Slack 연동 비활성화 (SLACK_SIGNING_SECRET 미설정)\n`);
+  }
 });

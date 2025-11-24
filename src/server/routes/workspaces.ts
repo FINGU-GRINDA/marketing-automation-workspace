@@ -1,7 +1,7 @@
 import express from 'express';
 import { v4 as uuidv4 } from 'uuid';
 import { db } from '../db.js';
-import { executeFlow } from '../flowEngine.js';
+import { executeFlow, executeUnifiedFlow } from '../flowEngine.js';
 import { suggestFormats } from '../llm.js';
 import type { RunFlowResponse, ChannelNodeConfig, ContentFormatNodeConfig } from '../types.js';
 
@@ -177,6 +177,7 @@ router.get('/:id/run', async (req, res) => {
  */
 router.post('/:id/run', async (req, res) => {
   const { id } = req.params;
+  const { mode = 'auto', selectedFormatNodeIds = [], inputNodeId } = req.body;
   const workspace = db.getWorkspace(id);
 
   if (!workspace) {
@@ -192,12 +193,15 @@ router.post('/:id/run', async (req, res) => {
 
   try {
     console.log(`\n=== Running flow for workspace: ${workspace.name} ===`);
+    console.log(`Mode: ${mode}, Selected formats: ${selectedFormatNodeIds.length}, Input node: ${inputNodeId || 'auto'}`);
 
     // 기존 결과 초기화
     db.clearGeneratedContents(id);
 
     // 플로우 실행 with 콜백
     const { results, executedPaths, skippedPaths } = await executeFlow(workspace, {
+      mode,
+      selectedFormatIds: selectedFormatNodeIds,
       onPathStart: (path) => {
         // 경로 실행 시작
         res.write(`data: ${JSON.stringify({ type: 'path_start', path })}\n\n`);
@@ -389,6 +393,92 @@ router.post('/:id/channels/:channelId/suggest-formats', async (req, res) => {
     console.error('Format suggestion error:', error);
     res.status(500).json({
       error: error instanceof Error ? error.message : 'Unknown error',
+    });
+  }
+});
+
+// Debug endpoint for testing unified flow execution
+router.post('/:workspaceId/debug-flow', async (req, res) => {
+  try {
+    const { workspaceId } = req.params;
+    const workspace = db.getWorkspace(workspaceId);
+
+    if (!workspace) {
+      return res.status(404).json({ error: 'Workspace not found' });
+    }
+
+    console.log(`\n[DEBUG] 통합 플로우 디버그 시작: ${workspaceId}`);
+
+    // Import the path finding functions for debugging
+    const {
+      findExecutionPaths,
+      findSearchExecutionPaths,
+      findRedditSearchExecutionPaths
+    } = await import('../flowEngine.js');
+
+    // 각 경로 유형별 개수 확인
+    const contentPaths = findExecutionPaths(workspace);
+    const searchPaths = findSearchExecutionPaths(workspace);
+    const redditSearchPaths = findRedditSearchExecutionPaths(workspace);
+
+    console.log(`[DEBUG] 경로 분석 결과:`);
+    console.log(`  - Input → Channel → ContentFormat: ${contentPaths.length}개`);
+    console.log(`  - Input → Channel → Search → Content: ${searchPaths.length}개`);
+    console.log(`  - Input → RedditSearch → Channel: ${redditSearchPaths.length}개`);
+
+    // 경로 상세 정보
+    const pathDetails = {
+      contentPaths: contentPaths.map(path => ({
+        input: path.inputNode.data.label,
+        channel: path.channelNode.data.label,
+        format: path.formatNode.data.label
+      })),
+      searchPaths: searchPaths.map(path => ({
+        input: path.inputNode.data.label,
+        channel: path.channelNode.data.label,
+        search: path.searchNode.data.label,
+        content: path.contentNode.data.label
+      })),
+      redditSearchPaths: redditSearchPaths.map(path => ({
+        input: path.inputNode.data.label,
+        redditSearch: path.redditSearchNode.data.label,
+        channel: path.channelNode.data.label
+      }))
+    };
+
+    // 경로 분석만 테스트 (실제 실행은 건너뛰기)
+    console.log('\n[DEBUG] 실제 실행은 건너뛰고 경로 분석만 수행합니다.');
+    const executionResult = {
+      contentResults: [],
+      searchResults: [],
+      redditSearchResults: [],
+      executedPaths: []
+    };
+
+    res.json({
+      success: true,
+      workspaceId,
+      pathAnalysis: {
+        contentPathCount: contentPaths.length,
+        searchPathCount: searchPaths.length,
+        redditSearchPathCount: redditSearchPaths.length,
+        totalPaths: contentPaths.length + searchPaths.length + redditSearchPaths.length
+      },
+      pathDetails,
+      executionResult: {
+        contentResultsCount: executionResult.contentResults.length,
+        searchResultsCount: executionResult.searchResults.length,
+        redditSearchResultsCount: executionResult.redditSearchResults.length,
+        executedPathsCount: executionResult.executedPaths.length
+      }
+    });
+
+    console.log(`[DEBUG] 통합 플로우 디버그 완료`);
+  } catch (error) {
+    console.error('Debug flow error:', error);
+    res.status(500).json({
+      error: error instanceof Error ? error.message : 'Unknown error',
+      stack: error instanceof Error ? error.stack : undefined
     });
   }
 });

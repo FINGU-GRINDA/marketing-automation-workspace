@@ -3,6 +3,11 @@ import type {
   InputNodeConfig,
   ChannelNodeConfig,
   ContentFormatNodeConfig,
+  SearchNodeConfig,
+  RedditSearchResult,
+  RedditQuestion,
+  RedditInsight,
+  RedditTopicSuggestion,
 } from './types.js';
 
 // 환경 변수에서 API 키 가져오기
@@ -309,6 +314,63 @@ export async function callLLM(
   } catch (error) {
     console.error('❌ 포스트 생성 실패:', error);
     throw error;
+  }
+}
+
+/**
+ * 언어 감지 함수
+ */
+export async function detectLanguage(text: string): Promise<{ language: string; isKorean: boolean }> {
+  const prompt = `다음 텍스트의 주요 언어를 감지하고 한국어인지 여부를 판단하세요.
+
+텍스트: "${text.substring(0, 500)}..."
+
+반드시 아래 JSON 형식으로만 응답하세요:
+{
+  "language": "감지된 언어 (예: 한국어, 영어, 일본어, 중국어 등)",
+  "isKorean": true/false
+}`;
+
+  try {
+    const response = await callOpenAIGPT5Generic(prompt);
+    const result = JSON.parse(response);
+    return {
+      language: result.language || '알 수 없음',
+      isKorean: result.isKorean || false
+    };
+  } catch (error) {
+    console.error('언어 감지 실패:', error);
+    // 기본값으로 한국어가 아닌 것으로 설정하여 번역 시도
+    return {
+      language: '알 수 없음',
+      isKorean: false
+    };
+  }
+}
+
+/**
+ * 한국어 번역 함수
+ */
+export async function translateToKorean(text: string): Promise<string> {
+  const prompt = `다음 마케팅 콘텐츠를 자연스러운 한국어로 번역하세요.
+
+요구사항:
+- 원본의 마케팅 톤과 스타일을 유지하세요
+- 구조와 흐름은 그대로 두되, 한국어로 자연스럽게 표현하세요
+- 전문 용어나 브랜드 이름은 적절히 처리하세요
+- 마케팅 설득력을 그대로 유지하세요
+
+원본 텍스트:
+"${text}"
+
+한국어 번역:`;
+
+  try {
+    const response = await callOpenAIGPT5Generic(prompt);
+    return response.trim();
+  } catch (error) {
+    console.error('한국어 번역 실패:', error);
+    return text; // 번역 실패시 원본 반환
   }
 }
 
@@ -818,6 +880,268 @@ export async function generateGammaSocialPost(
     return response.url || response.generatedUrl || '';
   } catch (error) {
     console.error('❌ Gamma 소셜 포스트 생성 실패:', error);
+    throw error;
+  }
+}
+
+/**
+ * 1단계: Reddit 분석 질문 생성
+ */
+export async function generateRedditAnalysisQuestions(
+  inputConfig: InputNodeConfig,
+  channelConfig: ChannelNodeConfig,
+  redditConfig: SearchNodeConfig
+): Promise<RedditQuestion[]> {
+  console.log('🔍 [Reddit 1단계] 분석 질문 생성 시작...');
+
+  const prompt = `당신은 Reddit 마케팅 분석 전문가입니다. 아래 정보를 바탕으로 Reddit에서 심층적인 인사이트를 발견하기 위한 질문 5개를 생성해주세요.
+
+입력 주제: ${inputConfig.topic}
+상세 내용: ${inputConfig.rawData}
+타겟 채널: ${redditConfig.channels.join(', ')}
+채널 페르소나: ${channelConfig.personaTags.join(', ')}
+관심 키워드: ${channelConfig.highLevelContentTags.join(', ')}
+
+요구사항:
+1. 마케팅 인사이트 발굴에 초점을 맞춘 질문
+2. 타겟 서브레딧의 특성을 고려한 질문
+3. 실제 Reddit 사용자들의 관점에서 질문
+4. 경쟁사 분석이나 시장 트렌드 관련 질문 포함
+5. 제품/서비스 개선이나 고객 니즈 파악에 도움이 되는 질문
+
+다음 JSON 형식으로 출력하세요:
+{
+  "questions": [
+    {
+      "id": "q1",
+      "question": "첫 번째 질문"
+    },
+    {
+      "id": "q2",
+      "question": "두 번째 질문"
+    }
+  ]
+}
+
+질문은 구체적이고 실용적이어야 하며, Reddit 검색으로 의미 있는 인사이트를 얻을 수 있어야 합니다.`;
+
+  try {
+    const responseText = await callOpenAIGPT5Generic(prompt);
+    console.log('✅ [Reddit 1단계] 분석 질문 생성 완료');
+
+    const result = JSON.parse(responseText);
+    return result.questions || [];
+  } catch (error) {
+    console.error('❌ [Reddit 1단계] 분석 질문 생성 실패:', error);
+
+    // 기본 질문 반환
+    return [
+      { id: "q1", question: `${inputConfig.topic}에 대한 Reddit 사용자들의 가장 일반적인 불만이나 우려는 무엇인가?` },
+      { id: "q2", question: `${inputConfig.topic}과 관련하여 사용자들이 추천하는 베스트 프랙티스는 무엇인가?` },
+      { id: "q3", question: `${inputConfig.topic} 분야에서 경쟁 제품/서비스에 대한 사용자들의 평가는 어떠한가?` },
+      { id: "q4", question: `${inputConfig.topic}과 관련된 최신 트렌드나 변화에 대해 Reddit 사용자들은 어떻게 생각하는가?` },
+      { id: "q5", question: `${inputConfig.topic} 도입 시 발생하는 일반적인 문제점과 해결책은 무엇인가?` }
+    ];
+  }
+}
+
+/**
+ * 2단계: Reddit 인사이트 분석 (가상 - 실제로는 Reddit API 필요)
+ */
+export async function analyzeRedditThreads(
+  question: RedditQuestion,
+  redditConfig: SearchNodeConfig
+): Promise<RedditInsight> {
+  console.log(`🔍 [Reddit 2단계] 질문 분석: ${question.question}`);
+
+  // 실제 구현에서는 Reddit API를 호출하여 스레드를 검색하고 분석해야 함
+  // 현재는 시뮬레이션된 인사이트 반환
+  const mockThreads = [
+    {
+      title: `${redditConfig.query}에 대한 실제 사용기`,
+      url: `https://reddit.com/r/${redditConfig.channels[0]}/example1`,
+      summary: '사용자들이 직접 경험한 솔직한 후기와 팁 공유',
+      topCommentSummary: '대부분 긍정적인 경험 but 몇 가지 주의할 점 존재'
+    },
+    {
+      title: `초보자를 위한 ${redditConfig.query} 가이드`,
+      url: `https://reddit.com/r/${redditConfig.channels[0]}/example2`,
+      summary: '새로운 사용자들을 위한 단계별 가이드와 추천 자료',
+      topCommentSummary: '가이드가 매우 유용하다는 의견이 많음, 추가 팁들 공유'
+    }
+  ];
+
+  const prompt = `아래 Reddit 질문과 가상의 검색 결과를 바탕으로 핵심 인사이트를 추출해주세요.
+
+질문: ${question.question}
+검색 결과: ${JSON.stringify(mockThreads, null, 2)}
+
+요구사항:
+1. Reddit 사용자들의 실제 의견과 경험에서 핵심 인사이트 3-5개 추출
+2. 마케팅 전략 수립에 즉시 활용 가능한 인사이트
+3. 제품/서비스 개선 관점의 인사이트
+4. 타겟 고객의 니즈와 pain point 관련 인사이트
+
+다음 JSON 형식으로 출력:
+{
+  "questionId": "${question.id}",
+  "queryUsed": "${redditConfig.query}",
+  "threads": ${JSON.stringify(mockThreads)},
+  "keyTakeaways": [
+    "핵심 인사이트 1",
+    "핵심 인사이트 2",
+    "핵심 인사이트 3"
+  ]
+}`;
+
+  try {
+    const responseText = await callOpenAIGPT5Generic(prompt);
+    console.log('✅ [Reddit 2단계] 인사이트 분석 완료');
+
+    const result = JSON.parse(responseText);
+    return {
+      questionId: question.id,
+      queryUsed: redditConfig.query,
+      threads: mockThreads,
+      keyTakeaways: result.keyTakeaways || [
+        'Reddit 사용자들은 실제 사용 경험을 중시함',
+        '솔직한 피드백과 구체적인 팁을 공유하는 경향',
+        '가격 대비 가치를 중요하게 생각함'
+      ]
+    };
+  } catch (error) {
+    console.error('❌ [Reddit 2단계] 인사이트 분석 실패:', error);
+
+    return {
+      questionId: question.id,
+      queryUsed: redditConfig.query,
+      threads: mockThreads,
+      keyTakeaways: [
+        'Reddit 사용자들은 실제 사용 경험을 중시함',
+        '솔직한 피드백과 구체적인 팁을 공유하는 경향',
+        '가격 대비 가치를 중요하게 생각함'
+      ]
+    };
+  }
+}
+
+/**
+ * 3단계: 주제 후보 생성
+ */
+export async function generateRedditTopicSuggestions(
+  inputConfig: InputNodeConfig,
+  channelConfig: ChannelNodeConfig,
+  redditInsights: RedditInsight[],
+  redditConfig: SearchNodeConfig
+): Promise<RedditTopicSuggestion[]> {
+  console.log('🔍 [Reddit 3단계] 주제 후보 생성 시작...');
+
+  const allTakeaways = redditInsights.flatMap(insight => insight.keyTakeaways);
+
+  const prompt = `당신은 콘텐츠 전략가입니다. 아래 Reddit 분석 결과를 바탕으로 마케팅 콘텐츠 주제 후보 5개를 생성해주세요.
+
+원본 주제: ${inputConfig.topic}
+채널: ${channelConfig.name} (${channelConfig.channelType})
+페르소나: ${channelConfig.personaTags.join(', ')}
+관심사: ${channelConfig.highLevelContentTags.join(', ')}
+
+Reddit 인사이트:
+${allTakeaways.map((insight, i) => `${i + 1}. ${insight}`).join('\n')}
+
+요구사항:
+1. Reddit에서 발견된 실제 사용자 니즈와 pain point 기반
+2. 채널의 페르소나와 타겟 고객에 적합한 주제
+3. 마케팅적으로 가치 있는 주제 (고객 유입, 전환, 브랜딩)
+4. 경쟁과 차별화될 수 있는 독특한 관점
+5. 주제별 관련 태그 3-5개 (해시태그용)
+
+각 주제는 다음 구조를 따르세요:
+- 제목: 흥미를 끌고 클릭을 유도하는 제목
+- 한 줄 요약: 핵심 가치와 내용 요약
+- 태그: 관련 키워드 태그
+
+다음 JSON 형식으로 출력:
+{
+  "topics": [
+    {
+      "id": "t1",
+      "title": "첫 번째 주제 제목",
+      "oneLineSummary": "주제 요약",
+      "basedOnQuestions": ["q1", "q2"],
+      "basedOnThreads": ["스레드1", "스레드2"],
+      "mainInsights": ["핵심 인사이트1", "핵심 인사이트2"],
+      "redditLinks": ["Reddit URL1", "Reddit URL2"],
+      "tags": ["태그1", "태그2", "태그3"]
+    }
+  ]
+}`;
+
+  try {
+    const responseText = await callOpenAIGPT5Generic(prompt);
+    console.log('✅ [Reddit 3단계] 주제 후보 생성 완료');
+
+    const result = JSON.parse(responseText);
+    return result.topics || [];
+  } catch (error) {
+    console.error('❌ [Reddit 3단계] 주제 후보 생성 실패:', error);
+
+    // 기본 주제 반환
+    return [
+      {
+        id: "t1",
+        title: `${inputConfig.topic} 사용후기: Reddit이 알려주는 진짜 장단점`,
+        oneLineSummary: "실제 사용자들의 솔직한 후기와 현실적인 조언",
+        basedOnQuestions: ["q1", "q2"],
+        basedOnThreads: ["사용기 공유", "초보자 가이드"],
+        mainInsights: ["실제 경험의 중요성", "현실적인 기대치 설정"],
+        redditLinks: [`https://reddit.com/r/${redditConfig.channels[0]}`],
+        tags: [inputConfig.topic, "사용후기", "솔직한리뷰"]
+      }
+    ];
+  }
+}
+
+/**
+ * Reddit 서치 메인 함수 - 전체 프로세스 통합
+ */
+export async function callLLMRedditSearch(
+  inputConfig: InputNodeConfig,
+  channelConfig: ChannelNodeConfig,
+  redditConfig: SearchNodeConfig
+): Promise<RedditSearchResult> {
+  try {
+    console.log('🚀 Reddit 서치 분석 시작...');
+
+    // 1단계: 분석 질문 생성
+    const questions = await generateRedditAnalysisQuestions(inputConfig, channelConfig, redditConfig);
+
+    // 2단계: 각 질문에 대한 인사이트 분석 (병렬 처리)
+    const insightPromises = questions.map(question =>
+      analyzeRedditThreads(question, redditConfig)
+    );
+    const reddit_insights = await Promise.all(insightPromises);
+
+    // 3단계: 주제 후보 생성
+    const topics = await generateRedditTopicSuggestions(
+      inputConfig,
+      channelConfig,
+      reddit_insights,
+      redditConfig
+    );
+
+    const result: RedditSearchResult = {
+      questions,
+      reddit_insights,
+      topics
+    };
+
+    console.log('✅ Reddit 서치 분석 완료');
+    console.log(`📊 결과: ${questions.length}개 질문, ${reddit_insights.length}개 인사이트, ${topics.length}개 주제`);
+
+    return result;
+
+  } catch (error) {
+    console.error('❌ Reddit 서치 분석 실패:', error);
     throw error;
   }
 }

@@ -1,7 +1,7 @@
 import express from 'express';
 import { v4 as uuidv4 } from 'uuid';
 import { db } from '../db.js';
-import { executeFlow, executeUnifiedFlow } from '../flowEngine.js';
+import { executeFlow } from '../flowEngine.js';
 import { suggestFormats } from '../llm.js';
 import type { RunFlowResponse, ChannelNodeConfig, ContentFormatNodeConfig } from '../types.js';
 
@@ -412,19 +412,16 @@ router.post('/:workspaceId/debug-flow', async (req, res) => {
     // Import the path finding functions for debugging
     const {
       findExecutionPaths,
-      findSearchExecutionPaths,
-      findRedditSearchExecutionPaths
+      findSearchExecutionPaths
     } = await import('../flowEngine.js');
 
     // 각 경로 유형별 개수 확인
     const contentPaths = findExecutionPaths(workspace);
     const searchPaths = findSearchExecutionPaths(workspace);
-    const redditSearchPaths = findRedditSearchExecutionPaths(workspace);
 
     console.log(`[DEBUG] 경로 분석 결과:`);
     console.log(`  - Input → Channel → ContentFormat: ${contentPaths.length}개`);
     console.log(`  - Input → Channel → Search → Content: ${searchPaths.length}개`);
-    console.log(`  - Input → RedditSearch → Channel: ${redditSearchPaths.length}개`);
 
     // 경로 상세 정보
     const pathDetails = {
@@ -438,11 +435,6 @@ router.post('/:workspaceId/debug-flow', async (req, res) => {
         channel: path.channelNode.data.label,
         search: path.searchNode.data.label,
         content: path.contentNode.data.label
-      })),
-      redditSearchPaths: redditSearchPaths.map(path => ({
-        input: path.inputNode.data.label,
-        redditSearch: path.redditSearchNode.data.label,
-        channel: path.channelNode.data.label
       }))
     };
 
@@ -451,7 +443,6 @@ router.post('/:workspaceId/debug-flow', async (req, res) => {
     const executionResult = {
       contentResults: [],
       searchResults: [],
-      redditSearchResults: [],
       executedPaths: []
     };
 
@@ -461,14 +452,12 @@ router.post('/:workspaceId/debug-flow', async (req, res) => {
       pathAnalysis: {
         contentPathCount: contentPaths.length,
         searchPathCount: searchPaths.length,
-        redditSearchPathCount: redditSearchPaths.length,
-        totalPaths: contentPaths.length + searchPaths.length + redditSearchPaths.length
+        totalPaths: contentPaths.length + searchPaths.length
       },
       pathDetails,
       executionResult: {
         contentResultsCount: executionResult.contentResults.length,
         searchResultsCount: executionResult.searchResults.length,
-        redditSearchResultsCount: executionResult.redditSearchResults.length,
         executedPathsCount: executionResult.executedPaths.length
       }
     });

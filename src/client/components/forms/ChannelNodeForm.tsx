@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
-import type { Node, ChannelNodeConfig, Workspace } from '../../types';
+import type { Node, ChannelNodeConfig, Workspace, Topic } from '../../types';
 
 interface ChannelNodeFormProps {
   node: Node;
@@ -428,6 +428,103 @@ function ChannelNodeForm({ node, onUpdate, onCreateFormatNode, onSuggestFormats,
           <p className="text-xs text-gray-500 mt-2 text-center">
             채널 정보를 분석하여 2-3개의 적합한 포맷을 자동 생성합니다
           </p>
+        </div>
+      )}
+
+      {/* 주제 아카이브 */}
+      {formData.topics && formData.topics.length > 0 && (
+        <div className="pt-4 border-t border-gray-200">
+          <div className="flex items-center justify-between mb-3">
+            <h3 className="text-sm font-semibold text-gray-700">📚 주제 아카이브</h3>
+            <span className="text-xs text-gray-500 bg-gray-100 px-2 py-1 rounded">
+              {formData.topics.length}개 주제
+            </span>
+          </div>
+
+          <div className="space-y-2 max-h-60 overflow-y-auto">
+            {formData.topics.map((topic: Topic, index: number) => (
+              <div key={topic.id} className="bg-gray-50 border border-gray-200 rounded-lg p-3 hover:bg-gray-100 transition-colors">
+                <div className="flex items-start justify-between mb-2">
+                  <h4 className="text-sm font-medium text-gray-900 flex-1 leading-tight">
+                    {topic.title}
+                  </h4>
+                  <span className="text-xs text-gray-400 ml-2 whitespace-nowrap">
+                    #{index + 1}
+                  </span>
+                </div>
+
+                <p className="text-xs text-gray-600 mb-2 leading-relaxed">
+                  {topic.summary}
+                </p>
+
+                <div className="flex items-center justify-between text-xs text-gray-500">
+                  <div className="flex items-center gap-2">
+                    <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-blue-100 text-blue-800">
+                      {topic.sourceType === 'reddit_search' ? 'Reddit' : '수동'}
+                    </span>
+                    {topic.sourceType === 'reddit_search' && (
+                      <span className="text-blue-600">
+                        🔍
+                      </span>
+                    )}
+                  </div>
+                  <span>
+                    {new Date(topic.createdAt).toLocaleDateString('ko-KR')}
+                  </span>
+                </div>
+
+                {/* 태그 */}
+                {topic.tags && topic.tags.length > 0 && (
+                  <div className="flex flex-wrap gap-1 mt-2">
+                    {topic.tags.map((tag, tagIndex) => (
+                      <span key={tagIndex} className="text-xs bg-gray-200 text-gray-700 px-1.5 py-0.5 rounded">
+                        #{tag}
+                      </span>
+                    ))}
+                  </div>
+                )}
+
+                {/* Reddit 인사이트 (Reddit 소스인 경우) */}
+                {topic.sourceType === 'reddit_search' && topic.meta.insights && topic.meta.insights.length > 0 && (
+                  <details className="mt-2">
+                    <summary className="text-xs text-blue-700 cursor-pointer hover:text-blue-900 font-medium">
+                      💡 Reddit 인사이트 ({topic.meta.insights.length}개)
+                    </summary>
+                    <div className="mt-1 pl-3 border-l-2 border-blue-200">
+                      {topic.meta.insights.map((insight, insightIndex) => (
+                        <div key={insightIndex} className="text-xs text-gray-600 mb-1">
+                          • {insight}
+                        </div>
+                      ))}
+                    </div>
+                  </details>
+                )}
+              </div>
+            ))}
+          </div>
+
+          {/* 주제 실행 버튼 */}
+          <div className="mt-3 pt-3 border-t border-gray-200">
+            <p className="text-xs text-gray-500 mb-2 text-center">
+              이 주제들을 기반으로 콘텐츠를 생성할 수 있습니다
+            </p>
+            <div className="grid grid-cols-2 gap-2">
+              <button
+                type="button"
+                className="px-3 py-1.5 bg-blue-500 text-white rounded text-xs font-medium hover:bg-blue-600 transition-colors"
+                title="주제 기반 콘텐츠 자동 생성"
+              >
+                ✨ 전체 생성
+              </button>
+              <button
+                type="button"
+                className="px-3 py-1.5 bg-green-500 text-white rounded text-xs font-medium hover:bg-green-600 transition-colors"
+                title="선택된 주제로 콘텐츠 생성"
+              >
+                📝 선택 생성
+              </button>
+            </div>
+          </div>
         </div>
       )}
 

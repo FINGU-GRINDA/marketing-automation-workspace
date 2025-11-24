@@ -37,7 +37,7 @@ export async function callOpenAIGPT5Generic(prompt: string, options?: { systemMe
     model: MODEL,
     messages: messages,
     temperature: 0.7,
-    max_completion_tokens: 4000,
+    max_completion_tokens: 8000,
     top_p: 1,
     frequency_penalty: 0,
     presence_penalty: 0
@@ -109,13 +109,50 @@ export async function callOpenAIGPT5Generic(prompt: string, options?: { systemMe
           }
 
           const choice = response.choices[0];
-          if (!choice.message || !choice.message.content) {
-            const error = new Error('응답 choice에 message.content가 없습니다');
-            console.error('[OpenAI] 응답 구조 오류 (message):', choice);
+
+          // GPT-5.1 모델의 긴 응답 처리: content가 비어있을 경우 다른 필드 확인
+          let generatedText = '';
+
+          if (choice.message && choice.message.content) {
+            generatedText = choice.message.content.trim();
+          } else if (choice.message && choice.message.tool_calls && choice.message.tool_calls.length > 0) {
+            // tool_calls가 있는 경우 해당 내용을 텍스트로 변환
+            const toolCall = choice.message.tool_calls[0];
+            if (toolCall.function && toolCall.function.arguments) {
+              try {
+                const args = JSON.parse(toolCall.function.arguments);
+                generatedText = JSON.stringify(args, null, 2);
+              } catch (e) {
+                generatedText = toolCall.function.arguments;
+              }
+            }
+          } else if (choice.text) {
+            // 이전 버전 API 호환성
+            generatedText = choice.text.trim();
+          } else if (response.usage && response.usage.completion_tokens === 0) {
+            // 토큰이 0인 경우도 처리
+            generatedText = '';
+          }
+
+          // 여전히 내용이 없는 경우 오류 처리 (그러나 더 자세한 정보 제공)
+          if (!generatedText && choice.finish_reason !== 'length') {
+            const error = new Error(`응답에 콘텐츠가 없습니다 (finish_reason: ${choice.finish_reason})`);
+            console.error('[OpenAI] 응답 구조 오류:', {
+              choice,
+              hasMessage: !!choice.message,
+              hasContent: !!(choice.message && choice.message.content),
+              finishReason: choice.finish_reason
+            });
             return reject(error);
           }
 
-          const generatedText = choice.message.content.trim();
+          // 긴 응답이 잘린 경우 처리
+          if (choice.finish_reason === 'length' && !generatedText) {
+            const error = new Error('응답이 최대 길이에 도달하여 잘렸지만, 내용을 찾을 수 없습니다. max_tokens를 늘려보세요.');
+            console.error('[OpenAI] 응답 길이 제한 오류:', choice);
+            return reject(error);
+          }
+
           console.log('[OpenAI] 생성된 텍스트 길이:', generatedText.length);
           console.log('[OpenAI] 생성된 텍스트 앞부분 (100자):', generatedText.substring(0, 100));
 
@@ -154,3 +191,6 @@ export async function callOpenAIGPT5Generic(prompt: string, options?: { systemMe
     }
   });
 }
+
+// Gemini API 함수 별칭 export - 기존 코드와의 호환성을 위해
+export const callGemini3ProPreviewGeneric = callOpenAIGPT5Generic;

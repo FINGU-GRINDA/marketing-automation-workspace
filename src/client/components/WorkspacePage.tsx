@@ -257,6 +257,13 @@ function WorkspacePage({
     setShowRunModeModal(true);
   }, []);
 
+  // 서치 실행 버튼 클릭 (체크된 서치 노드들 실행)
+  const handleSearchExecute = useCallback(() => {
+    if (canvasRef.current) {
+      canvasRef.current.executeCheckedSearchNodes();
+    }
+  }, []);
+
   // 생성 결과 삭제
   const handleDeleteContent = useCallback((contentId: string) => {
     setGeneratedContents((prev) => prev.filter((c) => c.id !== contentId));
@@ -421,7 +428,8 @@ function WorkspacePage({
   const handleGenerateFormatFromReference = useCallback(async (data: {
     channelId: string;
     channelType: string;
-    referenceText: string;
+    textReference: string;
+    articleReferences: string[];
     targetLanguage: string;
   }) => {
     if (!selectedChannelId || !selectedChannelConfig) return;
@@ -711,6 +719,7 @@ function WorkspacePage({
         onSave={handleSave}
         onRun={handleRun}
         isRunning={isRunning}
+        onSearchExecute={handleSearchExecute}
       />
 
       {/* Main Content */}

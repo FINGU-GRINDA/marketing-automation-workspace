@@ -1,7 +1,11 @@
+import { memo } from 'react';
 import type { Node, Workspace } from '../types';
 import InputNodeForm from './forms/InputNodeForm';
 import ChannelNodeForm from './forms/ChannelNodeForm';
 import ContentFormatNodeForm from './forms/ContentFormatNodeForm';
+import RedditSearchNodeForm from './forms/RedditSearchNodeForm';
+import SearchNodeForm from './forms/SearchNodeForm';
+import ContentNodeForm from './forms/ContentNodeForm';
 
 interface LeftPanelProps {
   selectedNode: Node | null;
@@ -13,6 +17,7 @@ interface LeftPanelProps {
 }
 
 function LeftPanel({ selectedNode, workspace, setWorkspace, onCreateFormatNode, onSuggestFormats, onOpenFormatReference }: LeftPanelProps) {
+  
   // 노드 설정 업데이트
   const updateNodeConfig = (nodeId: string, newConfig: any) => {
     const updatedNodes = workspace.nodes.map((node) => {
@@ -25,6 +30,8 @@ function LeftPanel({ selectedNode, workspace, setWorkspace, onCreateFormatNode, 
           newLabel = newConfig.name;
         } else if (newConfig.kind === 'input' && newConfig.title) {
           newLabel = newConfig.title;
+        } else if (newConfig.kind === 'reddit_search') {
+          newLabel = 'Reddit 서치';
         }
 
         // 완전히 새로운 노드 객체 생성 (deep copy)
@@ -84,6 +91,24 @@ function LeftPanel({ selectedNode, workspace, setWorkspace, onCreateFormatNode, 
                 onUpdate={(config) => updateNodeConfig(selectedNode.id, config)}
               />
             )}
+            {selectedNode.type === 'reddit_search' && (
+              <RedditSearchNodeForm
+                node={selectedNode}
+                onUpdate={(config) => updateNodeConfig(selectedNode.id, config)}
+              />
+            )}
+            {selectedNode.type === 'search' && (
+              <SearchNodeForm
+                node={selectedNode}
+                onUpdate={(config) => updateNodeConfig(selectedNode.id, config)}
+              />
+            )}
+            {selectedNode.type === 'content' && (
+              <ContentNodeForm
+                node={selectedNode}
+                onUpdate={(config) => updateNodeConfig(selectedNode.id, config)}
+              />
+            )}
           </div>
         )}
       </div>
@@ -91,4 +116,4 @@ function LeftPanel({ selectedNode, workspace, setWorkspace, onCreateFormatNode, 
   );
 }
 
-export default LeftPanel;
+export default memo(LeftPanel);

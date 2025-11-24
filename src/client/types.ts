@@ -340,3 +340,18 @@ export interface ClipboardEdgeData {
   type: string;
   style?: any;
 }
+
+// Slack 메시지 타입
+export interface SlackMessage {
+  id: string;
+  channelId: string;
+  channelName: string;
+  text: string;
+  userId: string;
+  userName: string;
+  timestamp: string;
+  threadTs?: string;
+  createdAt: string;
+  forwarded?: boolean;
+  forwardedAt?: string;
+}

@@ -2,7 +2,7 @@
 import https from 'https';
 
 const MODEL = "gemini-2.5-flash";
-const API_KEY = "process.env.GOOGLE_API_KEY";
+const API_KEY = "***REDACTED***";
 
 const url = `https://generativelanguage.googleapis.com/v1beta/models/${MODEL}:generateContent`;
 
